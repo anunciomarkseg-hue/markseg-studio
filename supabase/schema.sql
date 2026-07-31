@@ -100,3 +100,50 @@ values
   ('instagram', '@markseg', 'MarkSeg', 12840, 'gradient-orange'),
   ('facebook',  'MarkSeg',  'MarkSeg — Marketing para Segurança', 8420, 'gradient-blue')
 on conflict do nothing;
+
+-- ============================================================
+--  CALENDÁRIO EDITORIAL VISUAL (separado do fluxo de aprovação)
+--  Ferramenta: sobe 1 pauta em PDF por cliente -> vira calendário
+--  visual pra compartilhar com o cliente (link público read-only).
+--  Rode este bloco no SQL Editor do Supabase.
+-- ============================================================
+
+create table if not exists editorial_calendars (
+  id           uuid primary key default gen_random_uuid(),
+  group_key    text not null,                 -- cliente (mesmo group_key das contas)
+  title        text not null default '',      -- ex: "Agosto 2026"
+  theme        text not null default '',      -- tema do mês (opcional)
+  ref_year     int,
+  ref_month    int,                           -- 1-12
+  source_name  text,                          -- nome do PDF de origem
+  token        text not null unique,          -- link público /cal/[token]
+  created_at   timestamptz not null default now(),
+  updated_at   timestamptz not null default now()
+);
+
+create index if not exists idx_cal_group on editorial_calendars (group_key);
+
+create table if not exists editorial_calendar_posts (
+  id           uuid primary key default gen_random_uuid(),
+  calendar_id  uuid not null references editorial_calendars(id) on delete cascade,
+  ref          text not null default '',
+  planned_date timestamptz not null,
+  format       text not null default 'feed',  -- feed | carrossel | reel | story
+  title        text not null default '',
+  brief        text not null default '',
+  networks     text[] not null default '{}',
+  sort         int not null default 0
+);
+
+create index if not exists idx_cal_posts_cal  on editorial_calendar_posts (calendar_id, planned_date);
+create index if not exists idx_cal_posts_date on editorial_calendar_posts (planned_date);
+
+-- updated_at automático no calendário
+drop trigger if exists trg_cal_touch on editorial_calendars;
+create trigger trg_cal_touch
+  before update on editorial_calendars
+  for each row execute function touch_updated_at();
+
+-- RLS ligada (back-end usa service role e ignora; navegador nunca acessa direto)
+alter table editorial_calendars      enable row level security;
+alter table editorial_calendar_posts enable row level security;

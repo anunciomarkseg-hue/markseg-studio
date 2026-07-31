@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import {
   ChevronLeft,
   ChevronRight,
@@ -12,6 +13,8 @@ import {
   Loader2,
   ImagePlus,
   CalendarClock,
+  CalendarDays,
+  ClipboardList,
   AlertTriangle,
   MessageSquare,
   Send,
@@ -407,6 +410,19 @@ export function PautaClient({
 
   return (
     <div className="mx-auto max-w-6xl">
+      {/* ===== Alternador Aprovação / Calendário visual ===== */}
+      <div className="mb-4 inline-flex rounded-xl border border-line bg-surface p-1">
+        <span className="flex items-center gap-1.5 rounded-lg bg-brand-blue-50 px-3 py-1.5 text-sm font-semibold text-brand-blue-700">
+          <ClipboardList className="h-4 w-4" /> Aprovação
+        </span>
+        <Link
+          href="/pauta/calendario"
+          className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-semibold text-muted hover:text-ink"
+        >
+          <CalendarDays className="h-4 w-4" /> Calendário visual
+        </Link>
+      </div>
+
       {/* ===== ALERTA: ajustes pedidos pelo cliente ===== */}
       {ajustes.length > 0 && (
         <div className="mb-5 rounded-2xl border border-rose-300 bg-rose-50 p-4 animate-rise">
