@@ -1,36 +1,56 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# MarkSeg Studio
 
-## Getting Started
+Ferramenta interna da **MarkSeg** para gestão de redes sociais dos clientes:
+publicação e agendamento (Instagram, Facebook, LinkedIn, TikTok), pauta
+editorial com aprovação do cliente, mural interno, relatórios e insights.
 
-First, run the development server:
+**Stack:** Next.js 16 · React 19 · Tailwind v4 · Supabase (Postgres + Storage +
+Auth) · Meta Graph API · Cloudflare R2 · Web Push (VAPID) · Deploy na Vercel.
+
+## Rodar localmente
 
 ```bash
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Antes precisa criar o arquivo **`.env.local`** na raiz (ele **não** vai pro Git,
+por segurança). Copie os valores da máquina principal ou do gerenciador de
+senhas. Chaves necessárias:
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```
+# Supabase
+NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY
+SUPABASE_URL, SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY
+# Meta (Instagram/Facebook)
+META_APP_ID, META_APP_SECRET, META_REDIRECT_URI
+# LinkedIn
+LINKEDIN_CLIENT_ID, LINKEDIN_CLIENT_SECRET
+# TikTok
+TIKTOK_CLIENT_KEY, TIKTOK_CLIENT_SECRET, TIKTOK_DEFAULT_PRIVACY
+# Cloudflare R2 (mídia)
+R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_BUCKET, R2_PUBLIC_URL
+# Web Push
+VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY, VAPID_SUBJECT, NEXT_PUBLIC_VAPID_PUBLIC_KEY
+# Agendador (cron)
+CRON_SECRET
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Deploy
 
-## Learn More
+Deploy automático na **Vercel**: todo `git push` na branch `master` publica em
+produção (`studio.markseg.com.br`). As mesmas variáveis do `.env.local` estão
+configuradas no painel da Vercel.
 
-To learn more about Next.js, take a look at the following resources:
+## Trabalhar em outra máquina
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+```bash
+git clone https://github.com/anunciomarkseg-hue/markseg-studio.git
+cd markseg-studio
+npm install
+# criar o .env.local (ver acima)
+npm run dev
+```
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Salvar mudanças: `git add -A && git commit -m "..." && git push`
+Puxar mudanças: `git pull`
