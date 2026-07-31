@@ -36,7 +36,8 @@ export default async function PublicCalendarPage({ params }: { params: Promise<{
   const cal = await getCalendarByToken(token);
   if (!cal) return <NotFound />;
 
-  const clientName = await clientNameFor(cal.group_key);
+  // Prefere o nome digitado no upload; cai no antigo (conta conectada) se vazio.
+  const clientName = cal.client_name?.trim() || (await clientNameFor(cal.group_key));
 
   return (
     <div className="min-h-screen bg-canvas">

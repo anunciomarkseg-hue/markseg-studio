@@ -11,6 +11,10 @@ import { getSupabaseAdmin } from "./supabase";
  * Tabelas: `editorial_calendars` (uma por PDF/mês) + `editorial_calendar_posts`.
  */
 
+/** Status de publicação de cada post no calendário visual.
+ *  "atrasado" NÃO é gravado — é derivado (pendente + data vencida). */
+export type CalendarPostStatus = "pendente" | "publicado" | "erro";
+
 export interface CalendarPost {
   id: string;
   calendar_id: string;
@@ -20,12 +24,14 @@ export interface CalendarPost {
   title: string;
   brief: string;
   networks: string[];
+  status: CalendarPostStatus;
   sort: number;
 }
 
 export interface EditorialCalendar {
   id: string;
-  group_key: string; // cliente
+  group_key: string; // chave do cliente (slug do nome, ou group_key da conta conectada)
+  client_name: string; // nome do cliente digitado no upload (NÃO exige conta conectada)
   title: string; // ex: "Agosto 2026"
   theme: string; // tema do mês (opcional)
   ref_year: number | null;
@@ -41,9 +47,9 @@ export interface CalendarWithPosts extends EditorialCalendar {
 }
 
 const CAL_COLS =
-  "id, group_key, title, theme, ref_year, ref_month, source_name, token, created_at";
+  "id, group_key, client_name, title, theme, ref_year, ref_month, source_name, token, created_at";
 const POST_COLS =
-  "id, calendar_id, ref, planned_date, format, title, brief, networks, sort";
+  "id, calendar_id, ref, planned_date, format, title, brief, networks, status, sort";
 
 export interface NewCalendarPost {
   ref: string;
@@ -58,6 +64,7 @@ export interface NewCalendarPost {
 export async function createCalendar(
   input: {
     group_key: string;
+    client_name: string;
     title: string;
     theme?: string;
     ref_year?: number | null;
@@ -73,6 +80,7 @@ export async function createCalendar(
     .from("editorial_calendars")
     .insert({
       group_key: input.group_key,
+      client_name: input.client_name,
       title: input.title,
       theme: input.theme ?? "",
       ref_year: input.ref_year ?? null,
@@ -115,9 +123,7 @@ export async function listCalendars(groupKey: string): Promise<EditorialCalendar
   return (data ?? []) as EditorialCalendar[];
 }
 
-/** Calendários de um cliente já com os posts embutidos (poucos por cliente). */
-export async function listCalendarsWithPosts(groupKey: string): Promise<CalendarWithPosts[]> {
-  const cals = await listCalendars(groupKey);
+async function attachPosts(cals: EditorialCalendar[]): Promise<CalendarWithPosts[]> {
   if (!cals.length) return [];
   const sb = getSupabaseAdmin();
   const { data } = await sb
@@ -132,6 +138,23 @@ export async function listCalendarsWithPosts(groupKey: string): Promise<Calendar
   const byCal: Record<string, CalendarPost[]> = {};
   for (const p of posts) (byCal[p.calendar_id] ??= []).push(p);
   return cals.map((c) => ({ ...c, posts: byCal[c.id] ?? [] }));
+}
+
+/** Calendários de um cliente já com os posts embutidos (poucos por cliente). */
+export async function listCalendarsWithPosts(groupKey: string): Promise<CalendarWithPosts[]> {
+  return attachPosts(await listCalendars(groupKey));
+}
+
+/** TODOS os calendários (de todos os clientes) com os posts — o tool é independente
+ *  de conta conectada, então lista por nome de cliente digitado no upload. */
+export async function listAllCalendarsWithPosts(): Promise<CalendarWithPosts[]> {
+  const sb = getSupabaseAdmin();
+  const { data, error } = await sb
+    .from("editorial_calendars")
+    .select(CAL_COLS)
+    .order("created_at", { ascending: false });
+  if (error) throw new Error(error.message);
+  return attachPosts((data ?? []) as EditorialCalendar[]);
 }
 
 /** Contagem de posts por calendário (pra mostrar "12 posts" no card). */
@@ -181,13 +204,26 @@ export async function getCalendarByToken(token: string): Promise<CalendarWithPos
 
 export async function updateCalendar(
   id: string,
-  patch: Partial<Pick<EditorialCalendar, "title" | "theme">>,
+  patch: Partial<Pick<EditorialCalendar, "title" | "theme" | "client_name">>,
 ): Promise<void> {
   const sb = getSupabaseAdmin();
   const { error } = await sb
     .from("editorial_calendars")
     .update({ ...patch, updated_at: new Date().toISOString() })
     .eq("id", id);
+  if (error) throw new Error(error.message);
+}
+
+/** Marca o status de publicação de um post do calendário (manual). */
+export async function setCalendarPostStatus(
+  postId: string,
+  status: CalendarPostStatus,
+): Promise<void> {
+  const sb = getSupabaseAdmin();
+  const { error } = await sb
+    .from("editorial_calendar_posts")
+    .update({ status })
+    .eq("id", postId);
   if (error) throw new Error(error.message);
 }
 

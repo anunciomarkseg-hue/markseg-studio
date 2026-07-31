@@ -1,8 +1,18 @@
 import { NextResponse } from "next/server";
 import { supabaseConfigured, getSupabaseAdmin } from "@/lib/supabase";
-import { getActiveGroup } from "@/lib/active";
 import { createCalendar, type NewCalendarPost } from "@/lib/calendar";
 import { parsePauta, pautaYear } from "@/lib/pautaPdf";
+
+/** Slug estável do nome do cliente → vira o group_key (agrupa calendários do mesmo cliente). */
+function slug(name: string): string {
+  return name
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 60) || "cliente";
+}
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -47,15 +57,16 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Supabase não configurado" }, { status: 500 });
   }
 
-  const group = await getActiveGroup();
-  if (!group) {
+  const form = await req.formData().catch(() => null);
+  const clientName = String(form?.get("client_name") ?? "").trim();
+  if (!clientName) {
     return NextResponse.json(
-      { error: "Selecione um cliente no topo antes de subir a pauta." },
+      { error: "Informe o nome do cliente dessa pauta (ex: Planserv)." },
       { status: 400 },
     );
   }
+  const group = slug(clientName); // chave estável por nome (não exige conta conectada)
 
-  const form = await req.formData().catch(() => null);
   const file = form?.get("file");
   if (!(file instanceof File)) {
     return NextResponse.json({ error: "Envie o arquivo PDF da pauta." }, { status: 400 });
@@ -87,7 +98,9 @@ export async function POST(req: Request) {
     );
   }
 
-  // As redes de cada post seguem as REDES REAIS do cliente ativo.
+  // Calendário visual é independente de conta conectada: as redes servem só como
+  // ícone. Se o cliente estiver conectado (mesmo nome/slug), usa as redes reais;
+  // senão, cai no padrão IG+FB (ou LinkedIn pra artigo).
   const sb = getSupabaseAdmin();
   const { data: accts } = await sb.from("social_accounts").select("id, platform, group_key");
   const clientPlatforms = [
@@ -96,9 +109,9 @@ export async function POST(req: Request) {
   const igfb = clientPlatforms.filter((p) => p === "instagram" || p === "facebook");
   const hasLinkedin = clientPlatforms.includes("linkedin");
   const networksFor = (isArticle: boolean): string[] => {
-    if (isArticle) return hasLinkedin ? ["linkedin"] : igfb.length ? igfb : clientPlatforms;
+    if (isArticle) return hasLinkedin ? ["linkedin"] : ["linkedin"];
     if (igfb.length) return igfb;
-    return clientPlatforms.length ? clientPlatforms : ["instagram"];
+    return ["instagram", "facebook"];
   };
 
   const posts: NewCalendarPost[] = parsed.map((p) => ({
@@ -119,6 +132,7 @@ export async function POST(req: Request) {
     const { id, token } = await createCalendar(
       {
         group_key: group,
+        client_name: clientName,
         title,
         theme,
         ref_year: refYear,
@@ -127,7 +141,7 @@ export async function POST(req: Request) {
       },
       posts,
     );
-    return NextResponse.json({ ok: true, id, token, created: posts.length, title });
+    return NextResponse.json({ ok: true, id, token, created: posts.length, title, client_name: clientName });
   } catch (e) {
     return NextResponse.json({ error: (e as Error).message }, { status: 500 });
   }
