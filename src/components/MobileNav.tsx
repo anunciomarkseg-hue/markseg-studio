@@ -18,7 +18,10 @@ import {
   Plus,
   LogOut,
   KeyRound,
+  FileBarChart,
+  ExternalLink,
 } from "lucide-react";
+import { REPORT_GENERATOR_URL } from "./Sidebar";
 
 const NAV = [
   { href: "/", label: "Visão geral", icon: LayoutDashboard },
@@ -92,6 +95,19 @@ export function MobileNav({ userEmail, pautaAlerts = 0 }: { userEmail: string | 
                   </Link>
                 );
               })}
+
+              {/* Ferramenta externa: Gerador de relatórios */}
+              <a
+                href={REPORT_GENERATOR_URL}
+                target="_blank"
+                rel="noreferrer"
+                onClick={() => setOpen(false)}
+                className="mt-1 flex items-center gap-3 rounded-xl border border-brand-orange/30 bg-orange-50/60 px-3 py-2.5 text-sm font-semibold text-brand-orange"
+              >
+                <FileBarChart className="h-[18px] w-[18px]" strokeWidth={2.2} />
+                <span className="flex-1">Gerador de relatórios</span>
+                <ExternalLink className="h-3.5 w-3.5 opacity-70" />
+              </a>
             </nav>
 
             <div className="mt-4 space-y-1 border-t border-line pt-3">

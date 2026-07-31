@@ -19,7 +19,9 @@ import {
   Check,
   ArrowUp,
   ArrowDown,
+  FileBarChart,
 } from "lucide-react";
+import { REPORT_GENERATOR_URL } from "./Sidebar";
 import type { SocialAccount } from "@/lib/types";
 import type { AccountInsights } from "@/lib/insights";
 import { buildClients } from "@/lib/clients";
@@ -159,9 +161,19 @@ export function RelatoriosClient({ accounts }: { accounts: SocialAccount[] }) {
 
   return (
     <div className="mx-auto max-w-6xl space-y-5">
-      <div className="animate-rise">
-        <h1 className="font-display text-2xl font-bold text-ink">Reports &amp; Analytics</h1>
-        <p className="mt-1 text-sm text-muted">Relatório do cliente — todas as redes num lugar só.</p>
+      <div className="flex flex-wrap items-start justify-between gap-3 animate-rise">
+        <div>
+          <h1 className="font-display text-2xl font-bold text-ink">Reports &amp; Analytics</h1>
+          <p className="mt-1 text-sm text-muted">Relatório do cliente — todas as redes num lugar só.</p>
+        </div>
+        <a
+          href={REPORT_GENERATOR_URL}
+          target="_blank"
+          rel="noreferrer"
+          className="gradient-brand flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold text-white transition-fluid hover:opacity-95"
+        >
+          <FileBarChart className="h-4 w-4" /> Gerador de relatórios <ExternalLink className="h-3.5 w-3.5 opacity-80" />
+        </a>
       </div>
 
       {/* Controles */}
