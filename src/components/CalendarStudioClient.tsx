@@ -352,7 +352,8 @@ export function CalendarStudioClient({
             </datalist>
             <p className="mb-3 text-xs text-muted">Não precisa estar conectado no Studio — é só o nome pra organizar.</p>
 
-            <input ref={fileRef} type="file" accept="application/pdf,.pdf" className="mb-4 w-full text-sm text-muted file:mr-3 file:rounded-lg file:border-0 file:bg-brand-blue-50 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-brand-blue-700" />
+            <input ref={fileRef} type="file" accept="application/pdf,.pdf,.md,.markdown,text/markdown,text/plain" className="mb-2 w-full text-sm text-muted file:mr-3 file:rounded-lg file:border-0 file:bg-brand-blue-50 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-brand-blue-700" />
+            <p className="mb-4 text-xs text-muted">Aceita <b>PDF</b> ou <b>.md</b> (padrão MarkSeg — leitura garantida).</p>
 
             <button
               onClick={doUpload}

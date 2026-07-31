@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { CheckCircle2, AlertTriangle, Clock, CircleDashed } from "lucide-react";
 import type { CalendarPost, CalendarPostStatus } from "@/lib/calendar";
 import { PlatformIcon } from "@/components/PlatformIcon";
@@ -14,9 +14,18 @@ export type DisplayStatus = "publicado" | "erro" | "atrasado" | "pendente";
 export function displayStatus(p: CalendarPost): DisplayStatus {
   if (p.status === "publicado") return "publicado";
   if (p.status === "erro") return "erro";
-  if (new Date(p.planned_date).getTime() < Date.now()) return "atrasado";
+  if (p.status === "atrasado") return "atrasado";
+  if (new Date(p.planned_date).getTime() < Date.now()) return "atrasado"; // derivado
   return "pendente";
 }
+
+/** Opções de status que dá pra marcar na mão. */
+export const STATUS_OPTS: { s: CalendarPostStatus; label: string; on: string }[] = [
+  { s: "publicado", label: "Publicado", on: "bg-emerald-600 text-white" },
+  { s: "atrasado", label: "Atrasado", on: "bg-amber-500 text-white" },
+  { s: "erro", label: "Erro técnico", on: "bg-rose-600 text-white" },
+  { s: "pendente", label: "Pendente", on: "bg-slate-500 text-white" },
+];
 export const STATUS_META: Record<
   DisplayStatus,
   { label: string; chip: string; dot: string; icon: typeof CheckCircle2 }
@@ -56,9 +65,24 @@ function byMonth(posts: CalendarPost[]) {
     });
 }
 
-function MonthGrid({ year, month, posts }: { year: number; month: number; posts: CalendarPost[] }) {
+function MonthGrid({
+  year,
+  month,
+  posts,
+  editable = false,
+  onSetStatus,
+  busyId,
+}: {
+  year: number;
+  month: number;
+  posts: CalendarPost[];
+  editable?: boolean;
+  onSetStatus?: (postId: string, status: CalendarPostStatus) => void;
+  busyId?: string | null;
+}) {
   const today = new Date();
   const comemos = useMemo(() => commemorativesForYear(year), [year]);
+  const [menuFor, setMenuFor] = useState<string | null>(null);
 
   const cells = useMemo(() => {
     const first = new Date(year, month, 1).getDay();
@@ -126,21 +150,50 @@ function MonthGrid({ year, month, posts }: { year: number; month: number; posts:
                 {items.map((p) => {
                   const f = fmtOf(p.format);
                   const st = displayStatus(p);
+                  const open = menuFor === p.id;
                   return (
-                    <div
-                      key={p.id}
-                      className="rounded-r-md border-l-[3px] px-2 py-1.5"
-                      style={{ borderColor: f.bg, background: f.soft }}
-                    >
-                      <p className="flex items-center gap-1 text-[9px] font-bold uppercase tracking-wide" style={{ color: f.text }}>
-                        <span
-                          className="h-1.5 w-1.5 shrink-0 rounded-full"
-                          style={{ background: STATUS_META[st].dot }}
-                          title={STATUS_META[st].label}
-                        />
-                        Post {numberOf[p.id]} · {f.label}
-                      </p>
-                      {p.title && <p className="mt-0.5 text-[11px] font-semibold leading-tight text-ink line-clamp-2">{p.title}</p>}
+                    <div key={p.id} className="relative">
+                      <button
+                        type="button"
+                        onClick={() => editable && setMenuFor(open ? null : p.id)}
+                        className={`block w-full rounded-r-md border-l-[3px] px-2 py-1.5 text-left ${editable ? "transition-fluid hover:brightness-95" : "cursor-default"}`}
+                        style={{ borderColor: f.bg, background: f.soft }}
+                      >
+                        <span className="flex items-center gap-1 text-[9px] font-bold uppercase tracking-wide" style={{ color: f.text }}>
+                          <span
+                            className="h-1.5 w-1.5 shrink-0 rounded-full"
+                            style={{ background: STATUS_META[st].dot }}
+                            title={STATUS_META[st].label}
+                          />
+                          Post {numberOf[p.id]} · {f.label}
+                        </span>
+                        {p.title && <span className="mt-0.5 block text-[11px] font-semibold leading-tight text-ink line-clamp-2">{p.title}</span>}
+                      </button>
+
+                      {editable && open && onSetStatus && (
+                        <>
+                          <div className="fixed inset-0 z-20" onClick={() => setMenuFor(null)} />
+                          <div className="absolute left-0 top-full z-30 mt-1 w-40 rounded-xl border border-line bg-surface p-1 shadow-pop">
+                            <p className="px-2 py-1 text-[10px] font-bold uppercase text-muted">Marcar status</p>
+                            {STATUS_OPTS.map((o) => (
+                              <button
+                                key={o.s}
+                                disabled={busyId === p.id}
+                                onClick={() => {
+                                  onSetStatus(p.id, o.s);
+                                  setMenuFor(null);
+                                }}
+                                className={`flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-xs font-semibold hover:bg-canvas ${
+                                  p.status === o.s ? "text-ink" : "text-muted"
+                                }`}
+                              >
+                                <span className="h-2 w-2 rounded-full" style={{ background: STATUS_META[o.s].dot }} />
+                                {o.label}
+                              </button>
+                            ))}
+                          </div>
+                        </>
+                      )}
                     </div>
                   );
                 })}
@@ -198,11 +251,6 @@ function DetailList({
   busyId?: string | null;
 }) {
   const sorted = [...posts].sort((a, b) => +new Date(a.planned_date) - +new Date(b.planned_date));
-  const SET_OPTS: { s: CalendarPostStatus; label: string; on: string }[] = [
-    { s: "publicado", label: "Publicado", on: "bg-emerald-600 text-white" },
-    { s: "erro", label: "Erro técnico", on: "bg-rose-600 text-white" },
-    { s: "pendente", label: "Pendente", on: "bg-slate-500 text-white" },
-  ];
   return (
     <div className="space-y-2.5">
       {sorted.map((p, i) => {
@@ -240,7 +288,7 @@ function DetailList({
                 {editable && onSetStatus && (
                   <div className="mt-2.5 flex flex-wrap items-center gap-1.5 border-t border-line pt-2.5">
                     <span className="text-[11px] font-semibold text-muted">Marcar:</span>
-                    {SET_OPTS.map((o) => {
+                    {STATUS_OPTS.map((o) => {
                       const active = p.status === o.s;
                       return (
                         <button
@@ -322,7 +370,15 @@ export function CalendarView({
       <Legend />
 
       {months.map((m) => (
-        <MonthGrid key={`${m.year}-${m.month}`} year={m.year} month={m.month} posts={m.posts} />
+        <MonthGrid
+          key={`${m.year}-${m.month}`}
+          year={m.year}
+          month={m.month}
+          posts={m.posts}
+          editable={editable}
+          onSetStatus={onSetStatus}
+          busyId={busyId}
+        />
       ))}
 
       {/* Legenda de status */}

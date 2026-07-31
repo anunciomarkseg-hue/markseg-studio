@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { supabaseConfigured, getSupabaseAdmin } from "@/lib/supabase";
 import { createCalendar, type NewCalendarPost } from "@/lib/calendar";
 import { parsePauta, pautaYear } from "@/lib/pautaPdf";
+import { parsePautaMd } from "@/lib/pautaMd";
 
 /** Slug estável do nome do cliente → vira o group_key (agrupa calendários do mesmo cliente). */
 function slug(name: string): string {
@@ -69,33 +70,53 @@ export async function POST(req: Request) {
 
   const file = form?.get("file");
   if (!(file instanceof File)) {
-    return NextResponse.json({ error: "Envie o arquivo PDF da pauta." }, { status: 400 });
+    return NextResponse.json({ error: "Envie o arquivo da pauta (PDF ou .md)." }, { status: 400 });
   }
-  if (!/\.pdf$/i.test(file.name) && file.type !== "application/pdf") {
-    return NextResponse.json({ error: "O arquivo precisa ser um PDF." }, { status: 400 });
-  }
-
-  let text = "";
-  try {
-    const { extractText, getDocumentProxy } = await import("unpdf");
-    const buf = new Uint8Array(await file.arrayBuffer());
-    const pdf = await getDocumentProxy(buf);
-    const res = await extractText(pdf, { mergePages: true });
-    text = res.text;
-  } catch (e) {
-    return NextResponse.json({ error: "Não consegui ler o PDF: " + (e as Error).message }, { status: 500 });
+  const isMd = /\.(md|markdown|txt)$/i.test(file.name) || file.type.startsWith("text/");
+  const isPdf = /\.pdf$/i.test(file.name) || file.type === "application/pdf";
+  if (!isMd && !isPdf) {
+    return NextResponse.json({ error: "O arquivo precisa ser um PDF ou um .md (padrão MarkSeg)." }, { status: 400 });
   }
 
-  const year = pautaYear(text, new Date().getFullYear());
-  const parsed = parsePauta(text, year);
-  if (!parsed.length) {
-    return NextResponse.json(
-      {
-        error:
-          "Não encontrei posts nesse PDF. Ele precisa ter datas (DD/MM) e os posts do mês. Confira se é a pauta certa.",
-      },
-      { status: 422 },
-    );
+  let parsed: { ref: string; planned_date: string; format: string; title: string; brief: string; networks: string[] }[] = [];
+  let theme = "";
+
+  if (isMd) {
+    // .md no PADRÃO MARKSEG STUDIO — leitura EXATA, sem adivinhação.
+    const text = await file.text();
+    const md = parsePautaMd(text);
+    parsed = md.posts;
+    theme = md.theme;
+    if (!parsed.length) {
+      return NextResponse.json(
+        { error: "O .md não está no padrão MarkSeg (## Post N + Data/Formato/Título/Descrição). Confira o arquivo." },
+        { status: 422 },
+      );
+    }
+  } else {
+    // PDF (plano B) — leitura por texto, tenta os vários modelos.
+    let text = "";
+    try {
+      const { extractText, getDocumentProxy } = await import("unpdf");
+      const buf = new Uint8Array(await file.arrayBuffer());
+      const pdf = await getDocumentProxy(buf);
+      const res = await extractText(pdf, { mergePages: true });
+      text = res.text;
+    } catch (e) {
+      return NextResponse.json({ error: "Não consegui ler o PDF: " + (e as Error).message }, { status: 500 });
+    }
+    const year = pautaYear(text, new Date().getFullYear());
+    parsed = parsePauta(text, year);
+    theme = detectTheme(text);
+    if (!parsed.length) {
+      return NextResponse.json(
+        {
+          error:
+            "Não encontrei posts nesse PDF. Ele precisa ter datas e os posts do mês. Dica: use o .md padrão MarkSeg pra leitura garantida.",
+        },
+        { status: 422 },
+      );
+    }
   }
 
   // Calendário visual é independente de conta conectada: as redes servem só como
@@ -124,9 +145,8 @@ export async function POST(req: Request) {
   }));
 
   const month = dominantMonth(posts);
-  const refYear = new Date(posts[0].planned_date).getFullYear() || year;
+  const refYear = new Date(posts[0].planned_date).getFullYear() || new Date().getFullYear();
   const title = `${MONTHS_PT[month - 1]} ${refYear}`;
-  const theme = detectTheme(text);
 
   try {
     const { id, token } = await createCalendar(

@@ -4,7 +4,7 @@ import { setCalendarPostStatus, type CalendarPostStatus } from "@/lib/calendar";
 
 export const dynamic = "force-dynamic";
 
-const VALID: CalendarPostStatus[] = ["pendente", "publicado", "erro"];
+const VALID: CalendarPostStatus[] = ["pendente", "publicado", "erro", "atrasado"];
 
 /** Marca o status de publicação de um post do calendário visual (manual). */
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {

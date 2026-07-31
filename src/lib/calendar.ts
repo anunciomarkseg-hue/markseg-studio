@@ -12,8 +12,9 @@ import { getSupabaseAdmin } from "./supabase";
  */
 
 /** Status de publicação de cada post no calendário visual.
- *  "atrasado" NÃO é gravado — é derivado (pendente + data vencida). */
-export type CalendarPostStatus = "pendente" | "publicado" | "erro";
+ *  Pode ser marcado na mão; "atrasado" também aparece sozinho quando um
+ *  post pendente passa da data (derivado). */
+export type CalendarPostStatus = "pendente" | "publicado" | "erro" | "atrasado";
 
 export interface CalendarPost {
   id: string;

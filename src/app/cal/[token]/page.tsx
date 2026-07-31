@@ -6,10 +6,29 @@ import { CalendarView } from "@/components/CalendarView";
 
 export const dynamic = "force-dynamic";
 
-export const metadata: Metadata = {
-  title: "Calendário Editorial — MarkSeg",
-  robots: { index: false, follow: false },
-};
+/** Preview do link (WhatsApp/redes) — client-friendly, NÃO o texto interno do Studio. */
+export async function generateMetadata({ params }: { params: Promise<{ token: string }> }): Promise<Metadata> {
+  const { token } = await params;
+  const cal = await getCalendarByToken(token);
+  if (!cal) {
+    return { title: "Calendário editorial", robots: { index: false, follow: false } };
+  }
+  const client = cal.client_name?.trim() || (await clientNameFor(cal.group_key));
+  const title = `Calendário editorial de ${client}`;
+  const description = `${cal.title ? cal.title + " · " : ""}Veja o planejamento de conteúdo do mês — formatos, temas e datas dos posts.`;
+  return {
+    title,
+    description,
+    robots: { index: false, follow: false },
+    openGraph: {
+      title,
+      description,
+      type: "website",
+      siteName: "MarkSeg",
+    },
+    twitter: { card: "summary_large_image", title, description },
+  };
+}
 
 function NotFound() {
   return (
