@@ -8,10 +8,11 @@ export const dynamic = "force-dynamic";
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
   if (!supabaseConfigured) return NextResponse.json({ error: "Supabase não configurado" }, { status: 500 });
   const { id } = await params;
-  const body = (await req.json().catch(() => ({}))) as { title?: string; theme?: string };
-  const patch: { title?: string; theme?: string } = {};
+  const body = (await req.json().catch(() => ({}))) as { title?: string; theme?: string; client_name?: string };
+  const patch: { title?: string; theme?: string; client_name?: string } = {};
   if (typeof body.title === "string") patch.title = body.title;
   if (typeof body.theme === "string") patch.theme = body.theme;
+  if (typeof body.client_name === "string" && body.client_name.trim()) patch.client_name = body.client_name.trim();
   if (!Object.keys(patch).length) {
     return NextResponse.json({ error: "Nada pra atualizar." }, { status: 400 });
   }

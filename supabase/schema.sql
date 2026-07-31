@@ -152,3 +152,8 @@ alter table editorial_calendar_posts enable row level security;
 -- pendente | publicado | erro  ("atrasado" é derivado: pendente + data vencida)
 alter table editorial_calendar_posts
   add column if not exists status text not null default 'pendente';
+
+-- Nome do cliente do calendário (digitado no upload; NÃO exige conta conectada
+-- na Meta). Permite criar calendário visual pra qualquer cliente.
+alter table editorial_calendars
+  add column if not exists client_name text not null default '';
