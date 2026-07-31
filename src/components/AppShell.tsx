@@ -2,6 +2,7 @@
 
 import { usePathname } from "next/navigation";
 import { OverduePopup } from "./OverduePopup";
+import { TodayCalendarPopup } from "./TodayCalendarPopup";
 import { UrgentOverlay } from "./UrgentOverlay";
 import { UnreadBadge } from "./UnreadBadge";
 
@@ -20,6 +21,7 @@ export function AppShell({
     pathname === "/login" ||
     pathname.startsWith("/definir-senha") ||
     pathname.startsWith("/r/") ||
+    pathname.startsWith("/cal/") || // calendário editorial público do cliente
     pathname.startsWith("/aprovar") || // página pública do cliente (sem chrome interno)
     pathname.startsWith("/mural") || // mural de recados público
     pathname.startsWith("/conversas"); // rede social do time (público)
@@ -41,6 +43,7 @@ export function AppShell({
         <main className="flex-1 px-5 py-6 lg:px-8 lg:py-8">{children}</main>
       </div>
       <OverduePopup />
+      <TodayCalendarPopup />
       <UrgentOverlay />
       <UnreadBadge />
     </div>

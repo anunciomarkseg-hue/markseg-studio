@@ -35,6 +35,7 @@ export async function middleware(request: NextRequest) {
     path.startsWith("/definir-senha") ||
     path.startsWith("/opengraph-image") || // imagem de preview (WhatsApp/redes)
     path.startsWith("/r/") || // relatório público do cliente
+    path.startsWith("/cal/") || // calendário editorial público do cliente (sem login)
     path.startsWith("/aprovar") || // aprovação pública da pauta (cliente sem login)
     path.startsWith("/api/aprovar") || // API da aprovação pública
     path.startsWith("/mural") || // mural de recados (público, sem login)
