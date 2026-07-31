@@ -1,26 +1,118 @@
 @import "tailwindcss";
 
+/* =========================================================
+   MarkSeg — Design System (cores extraídas da logo oficial)
+   ========================================================= */
+@theme {
+  /* Marca — Azul */
+  --color-brand-blue: #1c6fce;
+  --color-brand-blue-600: #1a62b8;
+  --color-brand-blue-700: #154f97;
+  --color-brand-blue-50: #eaf3fd;
+
+  /* Marca — Laranja/Âmbar */
+  --color-brand-amber: #fba61c;
+  --color-brand-orange: #f26a2c;
+  --color-brand-orange-50: #fef2ea;
+
+  /* Neutros */
+  --color-canvas: #f4f7fb;
+  --color-surface: #ffffff;
+  --color-ink: #0f1b2d;
+  --color-muted: #5b6b82;
+  --color-line: #e7edf5;
+
+  /* Status */
+  --color-ok: #15a06b;
+  --color-warn: #e8920c;
+  --color-danger: #e0483d;
+
+  /* Tipografia */
+  --font-display: var(--font-titillium), system-ui, sans-serif;
+  --font-sans: var(--font-inter), system-ui, sans-serif;
+
+  /* Raio / sombra */
+  --radius-xl: 1rem;
+  --radius-2xl: 1.25rem;
+  --shadow-card: 0 1px 2px rgba(16, 27, 45, 0.04), 0 10px 30px rgba(16, 27, 45, 0.06);
+  --shadow-pop: 0 12px 40px rgba(16, 27, 45, 0.14);
+}
+
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  color-scheme: light;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+html {
+  overflow-x: hidden;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--color-canvas);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  overflow-x: hidden;
+  max-width: 100%;
+}
+
+/* nenhuma imagem/svg estoura a largura da tela */
+img,
+svg,
+video {
+  max-width: 100%;
+}
+
+/* Degradês da marca */
+.gradient-blue {
+  background-image: linear-gradient(135deg, #2a82e4 0%, #1551a0 100%);
+}
+.gradient-orange {
+  background-image: linear-gradient(135deg, #fcb024 0%, #f2682c 100%);
+}
+.gradient-brand {
+  background-image: linear-gradient(115deg, #1c6fce 0%, #2a82e4 42%, #f26a2c 130%);
+}
+.text-gradient-brand {
+  background-image: linear-gradient(115deg, #1c6fce 0%, #f26a2c 95%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+/* Card base reutilizável */
+.card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-2xl);
+  box-shadow: var(--shadow-card);
+}
+
+/* Transições suaves globais (sensação "fluida") */
+a, button, .transition-fluid {
+  transition: all 0.18s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Scrollbar discreta */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #cdd8e6 transparent;
+}
+*::-webkit-scrollbar {
+  width: 9px;
+  height: 9px;
+}
+*::-webkit-scrollbar-thumb {
+  background: #cdd8e6;
+  border-radius: 999px;
+  border: 2px solid var(--color-canvas);
+}
+
+/* Animação de entrada */
+@keyframes rise {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.animate-rise {
+  animation: rise 0.4s cubic-bezier(0.4, 0, 0.2, 1) both;
 }
