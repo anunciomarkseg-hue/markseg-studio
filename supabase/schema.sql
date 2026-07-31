@@ -157,3 +157,9 @@ alter table editorial_calendar_posts
 -- na Meta). Permite criar calendário visual pra qualquer cliente.
 alter table editorial_calendars
   add column if not exists client_name text not null default '';
+
+-- Anti-duplicação: hora da 1ª tentativa de publicar cada alvo. Em recuperação
+-- (função cortada após publicar), serve de âncora pra guarda por horário —
+-- evita o post sair 2x quando a legenda é vazia/curta.
+alter table post_targets
+  add column if not exists attempted_at timestamptz;
