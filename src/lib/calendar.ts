@@ -11,6 +11,10 @@ import { getSupabaseAdmin } from "./supabase";
  * Tabelas: `editorial_calendars` (uma por PDF/mês) + `editorial_calendar_posts`.
  */
 
+/** Status de publicação de cada post no calendário visual.
+ *  "atrasado" NÃO é gravado — é derivado (pendente + data vencida). */
+export type CalendarPostStatus = "pendente" | "publicado" | "erro";
+
 export interface CalendarPost {
   id: string;
   calendar_id: string;
@@ -20,6 +24,7 @@ export interface CalendarPost {
   title: string;
   brief: string;
   networks: string[];
+  status: CalendarPostStatus;
   sort: number;
 }
 
@@ -43,7 +48,7 @@ export interface CalendarWithPosts extends EditorialCalendar {
 const CAL_COLS =
   "id, group_key, title, theme, ref_year, ref_month, source_name, token, created_at";
 const POST_COLS =
-  "id, calendar_id, ref, planned_date, format, title, brief, networks, sort";
+  "id, calendar_id, ref, planned_date, format, title, brief, networks, status, sort";
 
 export interface NewCalendarPost {
   ref: string;
@@ -188,6 +193,19 @@ export async function updateCalendar(
     .from("editorial_calendars")
     .update({ ...patch, updated_at: new Date().toISOString() })
     .eq("id", id);
+  if (error) throw new Error(error.message);
+}
+
+/** Marca o status de publicação de um post do calendário (manual). */
+export async function setCalendarPostStatus(
+  postId: string,
+  status: CalendarPostStatus,
+): Promise<void> {
+  const sb = getSupabaseAdmin();
+  const { error } = await sb
+    .from("editorial_calendar_posts")
+    .update({ status })
+    .eq("id", postId);
   if (error) throw new Error(error.message);
 }
 

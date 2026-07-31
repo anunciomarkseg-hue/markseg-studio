@@ -1,12 +1,31 @@
 "use client";
 
 import { useMemo } from "react";
-import type { CalendarPost } from "@/lib/calendar";
+import { CheckCircle2, AlertTriangle, Clock, CircleDashed } from "lucide-react";
+import type { CalendarPost, CalendarPostStatus } from "@/lib/calendar";
 import { PlatformIcon } from "@/components/PlatformIcon";
 import type { Platform } from "@/lib/types";
 import { commemorativesForYear, commemorativesOn } from "@/lib/commemorative";
 
 const WD = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
+
+/** Status exibido (deriva "atrasado" quando pendente + data já vencida). */
+export type DisplayStatus = "publicado" | "erro" | "atrasado" | "pendente";
+export function displayStatus(p: CalendarPost): DisplayStatus {
+  if (p.status === "publicado") return "publicado";
+  if (p.status === "erro") return "erro";
+  if (new Date(p.planned_date).getTime() < Date.now()) return "atrasado";
+  return "pendente";
+}
+export const STATUS_META: Record<
+  DisplayStatus,
+  { label: string; chip: string; dot: string; icon: typeof CheckCircle2 }
+> = {
+  publicado: { label: "Publicado", chip: "bg-emerald-100 text-emerald-700", dot: "#15a06b", icon: CheckCircle2 },
+  erro: { label: "Erro técnico", chip: "bg-rose-100 text-rose-700", dot: "#e11d48", icon: AlertTriangle },
+  atrasado: { label: "Atrasado", chip: "bg-amber-100 text-amber-800", dot: "#f59e0b", icon: Clock },
+  pendente: { label: "Pendente", chip: "bg-slate-100 text-slate-600", dot: "#94a3b8", icon: CircleDashed },
+};
 
 /** Cor + rótulo por formato — mesma linguagem visual da pauta. */
 export const FMT: Record<string, { bg: string; soft: string; text: string; label: string }> = {
@@ -106,13 +125,19 @@ function MonthGrid({ year, month, posts }: { year: number; month: number; posts:
               <div className="space-y-1.5">
                 {items.map((p) => {
                   const f = fmtOf(p.format);
+                  const st = displayStatus(p);
                   return (
                     <div
                       key={p.id}
                       className="rounded-r-md border-l-[3px] px-2 py-1.5"
                       style={{ borderColor: f.bg, background: f.soft }}
                     >
-                      <p className="text-[9px] font-bold uppercase tracking-wide" style={{ color: f.text }}>
+                      <p className="flex items-center gap-1 text-[9px] font-bold uppercase tracking-wide" style={{ color: f.text }}>
+                        <span
+                          className="h-1.5 w-1.5 shrink-0 rounded-full"
+                          style={{ background: STATUS_META[st].dot }}
+                          title={STATUS_META[st].label}
+                        />
                         Post {numberOf[p.id]} · {f.label}
                       </p>
                       {p.title && <p className="mt-0.5 text-[11px] font-semibold leading-tight text-ink line-clamp-2">{p.title}</p>}
@@ -161,8 +186,23 @@ function MonthGrid({ year, month, posts }: { year: number; month: number; posts:
 }
 
 /** Lista vertical detalhada (Post 1, 2, 3…) — bom pra ler no celular e ver o briefing. */
-function DetailList({ posts }: { posts: CalendarPost[] }) {
+function DetailList({
+  posts,
+  editable = false,
+  onSetStatus,
+  busyId,
+}: {
+  posts: CalendarPost[];
+  editable?: boolean;
+  onSetStatus?: (postId: string, status: CalendarPostStatus) => void;
+  busyId?: string | null;
+}) {
   const sorted = [...posts].sort((a, b) => +new Date(a.planned_date) - +new Date(b.planned_date));
+  const SET_OPTS: { s: CalendarPostStatus; label: string; on: string }[] = [
+    { s: "publicado", label: "Publicado", on: "bg-emerald-600 text-white" },
+    { s: "erro", label: "Erro técnico", on: "bg-rose-600 text-white" },
+    { s: "pendente", label: "Pendente", on: "bg-slate-500 text-white" },
+  ];
   return (
     <div className="space-y-2.5">
       {sorted.map((p, i) => {
@@ -170,6 +210,8 @@ function DetailList({ posts }: { posts: CalendarPost[] }) {
         const d = new Date(p.planned_date);
         const dd = d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
         const wd = d.toLocaleDateString("pt-BR", { weekday: "short" }).replace(".", "");
+        const st = displayStatus(p);
+        const S = STATUS_META[st];
         return (
           <div key={p.id} className="overflow-hidden rounded-2xl border border-line bg-white shadow-card">
             <div className="flex">
@@ -183,14 +225,37 @@ function DetailList({ posts }: { posts: CalendarPost[] }) {
                 <span className="text-[10px] capitalize opacity-90">({wd})</span>
               </div>
               <div className="min-w-0 flex-1 p-3.5">
-                <div className="mb-1 flex items-center gap-2">
+                <div className="mb-1 flex flex-wrap items-center gap-2">
                   {(p.networks ?? []).slice(0, 3).map((n) => (
                     <PlatformIcon key={n} platform={n as Platform} className="h-3.5 w-3.5 text-muted" />
                   ))}
+                  <span className={`flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-bold ${S.chip}`}>
+                    <S.icon className="h-3 w-3" /> {S.label}
+                  </span>
                 </div>
                 <h3 className="text-sm font-bold leading-snug text-ink">{p.title || f.label}</h3>
                 {p.brief && (
                   <p className="mt-1 whitespace-pre-wrap text-[13px] leading-relaxed text-muted">{p.brief}</p>
+                )}
+                {editable && onSetStatus && (
+                  <div className="mt-2.5 flex flex-wrap items-center gap-1.5 border-t border-line pt-2.5">
+                    <span className="text-[11px] font-semibold text-muted">Marcar:</span>
+                    {SET_OPTS.map((o) => {
+                      const active = p.status === o.s;
+                      return (
+                        <button
+                          key={o.s}
+                          onClick={() => onSetStatus(p.id, o.s)}
+                          disabled={busyId === p.id}
+                          className={`rounded-lg px-2.5 py-1 text-[11px] font-semibold transition-fluid disabled:opacity-50 ${
+                            active ? o.on : "bg-canvas text-muted hover:text-ink"
+                          }`}
+                        >
+                          {o.label}
+                        </button>
+                      );
+                    })}
+                  </div>
                 )}
               </div>
             </div>
@@ -224,10 +289,16 @@ export function CalendarView({
   theme,
   posts,
   showList = true,
+  editable = false,
+  onSetStatus,
+  busyId,
 }: {
   theme?: string;
   posts: CalendarPost[];
   showList?: boolean;
+  editable?: boolean;
+  onSetStatus?: (postId: string, status: CalendarPostStatus) => void;
+  busyId?: string | null;
 }) {
   const months = useMemo(() => byMonth(posts), [posts]);
 
@@ -254,10 +325,20 @@ export function CalendarView({
         <MonthGrid key={`${m.year}-${m.month}`} year={m.year} month={m.month} posts={m.posts} />
       ))}
 
+      {/* Legenda de status */}
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5">
+        {(["publicado", "atrasado", "erro", "pendente"] as DisplayStatus[]).map((s) => (
+          <span key={s} className="flex items-center gap-1.5 text-xs font-semibold text-muted">
+            <span className="h-2.5 w-2.5 rounded-full" style={{ background: STATUS_META[s].dot }} />
+            {STATUS_META[s].label}
+          </span>
+        ))}
+      </div>
+
       {showList && (
         <div>
           <p className="mb-2.5 text-xs font-bold uppercase tracking-wide text-muted">Detalhes de cada post</p>
-          <DetailList posts={posts} />
+          <DetailList posts={posts} editable={editable} onSetStatus={onSetStatus} busyId={busyId} />
         </div>
       )}
     </div>

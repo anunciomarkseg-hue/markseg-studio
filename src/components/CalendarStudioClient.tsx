@@ -18,7 +18,7 @@ import {
   ChevronLeft,
 } from "lucide-react";
 import type { Client } from "@/lib/clients";
-import type { CalendarWithPosts } from "@/lib/calendar";
+import type { CalendarWithPosts, CalendarPostStatus } from "@/lib/calendar";
 import { CalendarView } from "@/components/CalendarView";
 
 export function CalendarStudioClient({
@@ -40,6 +40,24 @@ export function CalendarStudioClient({
   const [importing, setImporting] = useState(false);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [statusBusyId, setStatusBusyId] = useState<string | null>(null);
+
+  async function setPostStatus(postId: string, status: CalendarPostStatus) {
+    setStatusBusyId(postId);
+    try {
+      const r = await fetch(`/api/calendario/post/${postId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status }),
+      });
+      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error ?? "Erro");
+      router.refresh();
+    } catch (e) {
+      setMsg({ ok: false, text: "Não consegui marcar o status: " + (e as Error).message });
+    } finally {
+      setStatusBusyId(null);
+    }
+  }
 
   const publicUrl = (token: string) =>
     typeof window !== "undefined" ? `${window.location.origin}/cal/${token}` : `/cal/${token}`;
@@ -268,7 +286,13 @@ export function CalendarStudioClient({
                     </button>
                   </div>
                 </div>
-                <CalendarView theme={opened.theme} posts={opened.posts} />
+                <CalendarView
+                  theme={opened.theme}
+                  posts={opened.posts}
+                  editable
+                  onSetStatus={setPostStatus}
+                  busyId={statusBusyId}
+                />
               </>
             ) : (
               <div className="card grid place-items-center gap-2 p-12 text-center text-sm text-muted">
