@@ -15,6 +15,8 @@ import {
   Plus,
   LogOut,
   KeyRound,
+  FileBarChart,
+  ExternalLink,
 } from "lucide-react";
 
 const NAV = [
@@ -27,6 +29,10 @@ const NAV = [
   { href: "/contas", label: "Contas", icon: AtSign },
   { href: "/relatorios", label: "Analytics", icon: BarChart3 },
 ];
+
+/** Ferramenta externa (Streamlit) de geração de relatórios. */
+export const REPORT_GENERATOR_URL =
+  "https://markseg-agente-g4jgjxglkbjbqd7tdsp4a2.streamlit.app/";
 
 export function Sidebar({ userEmail, pautaAlerts = 0 }: { userEmail: string | null; pautaAlerts?: number }) {
   const pathname = usePathname();
@@ -80,6 +86,18 @@ export function Sidebar({ userEmail, pautaAlerts = 0 }: { userEmail: string | nu
             </Link>
           );
         })}
+
+        {/* Ferramenta externa: Gerador de relatórios (abre em nova aba) */}
+        <a
+          href={REPORT_GENERATOR_URL}
+          target="_blank"
+          rel="noreferrer"
+          className="group mt-1 flex items-center gap-3 rounded-xl border border-brand-orange/30 bg-orange-50/60 px-3 py-2.5 text-sm font-semibold text-brand-orange transition-fluid hover:bg-orange-100"
+        >
+          <FileBarChart className="h-[18px] w-[18px]" strokeWidth={2.2} />
+          <span className="flex-1">Gerador de relatórios</span>
+          <ExternalLink className="h-3.5 w-3.5 opacity-70" />
+        </a>
       </nav>
 
       {/* Rodapé — usuário + sair */}

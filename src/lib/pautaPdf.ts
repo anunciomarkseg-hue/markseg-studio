@@ -293,6 +293,81 @@ function parseDescricao(text: string, year: number): ParsedPautaPost[] {
   return out;
 }
 
+/** Modelo 6 — "Proposta criativa": data POR EXTENSO + formato/categoria + título + descrição.
+ *  É o padrão das pautas geradas com IA (ex.: "04 de agosto, terça-feira" / "REELS EDUCATIVO").
+ *  Traz a descrição completa de cada post → tem prioridade quando existe data por extenso. */
+const MONTHS_PT: Record<string, string> = {
+  janeiro: "01", fevereiro: "02", "março": "03", marco: "03", abril: "04", maio: "05", junho: "06",
+  julho: "07", agosto: "08", setembro: "09", outubro: "10", novembro: "11", dezembro: "12",
+};
+const FMT_ANY_TD =
+  /(imagem est[áa]tic[ao]|est[áa]tic[ao]|carrossel|v[íi]deo(?:\s*\(reels?\))?|reels?|stor(?:y|ies))/i;
+// início provável da DESCRIÇÃO (pra saber onde o título termina quando quebra em 2 linhas)
+const DESC_START =
+  /^(reels?|imagem|est[áa]tic|carrossel|v[íi]deo|stor(?:y|ies)|foto|arte|montagem|apresentador|ilustra)\b/i;
+
+function parseTextDate(text: string, year: number): ParsedPautaPost[] {
+  let body = text;
+  // corta seções finais que NÃO são posts (dependências / fluxo de produção)
+  const cut = body.search(/O que dependemos do cliente|Resumo do fluxo de produç/i);
+  if (cut > 0) body = body.slice(0, cut);
+  // começa na "proposta criativa" (a parte rica), se existir
+  const s = body.search(/Proposta criativa/i);
+  if (s >= 0) body = body.slice(s);
+
+  const L = body.split("\n").map((x) => x.trim());
+  const monthNames = Object.keys(MONTHS_PT).join("|");
+  const dateRe = new RegExp(`^(?:(\\d{1,2})\\s+)?(\\d{1,2})\\s+de\\s+(${monthNames})\\b`, "i");
+
+  const anchors: { i: number; ref?: string; day: string; month: string }[] = [];
+  for (let i = 0; i < L.length; i++) {
+    const m = L[i].match(dateRe);
+    if (m) {
+      let ref = m[1];
+      if (!ref && /^\d{1,2}$/.test(L[i - 1] || "")) ref = L[i - 1];
+      anchors.push({ i, ref, day: m[2], month: MONTHS_PT[m[3].toLowerCase()] });
+    }
+  }
+
+  const out: ParsedPautaPost[] = [];
+  for (let k = 0; k < anchors.length; k++) {
+    const a = anchors[k];
+    const end = k + 1 < anchors.length ? anchors[k + 1].i : L.length;
+    const lines = L.slice(a.i + 1, end).filter(Boolean);
+    if (!lines.length) continue;
+
+    // 1ª linha do bloco = FORMATO (+ categoria)
+    const fm = lines[0].match(FMT_ANY_TD);
+    const format = fm ? mapFormat(fm[0]) : "feed";
+
+    // título = linhas seguintes até começar a descrição (junta título quebrado em 2 linhas)
+    const titleParts: string[] = [];
+    let j = 1;
+    for (; j < lines.length && titleParts.length < 3; j++) {
+      if (titleParts.length >= 1 && DESC_START.test(lines[j])) break;
+      titleParts.push(lines[j]);
+    }
+    const title = titleParts.join(" ").replace(/\s+/g, " ").trim().slice(0, 140);
+    if (!title) continue;
+
+    const brief = lines.slice(j).join(" ").replace(/\s+/g, " ").trim().slice(0, 600);
+    out.push({
+      ref: a.ref || String(out.length + 1),
+      planned_date: `${year}-${a.month}-${a.day.padStart(2, "0")}T10:00:00`,
+      format,
+      title,
+      brief: brief ? `📋 ${brief}` : "",
+      networks: ["instagram", "facebook"],
+    });
+  }
+  return out;
+}
+
+/** Detecta se o texto usa data por extenso ("12 de agosto"). */
+function hasTextDate(text: string): boolean {
+  return new RegExp(`\\b\\d{1,2}\\s+de\\s+(${Object.keys(MONTHS_PT).join("|")})\\b`, "i").test(text);
+}
+
 export function parsePauta(text: string, year: number): ParsedPautaPost[] {
   if (text.includes("Pautas detalhadas")) {
     const d = parseDetailed(text, year);
@@ -301,6 +376,11 @@ export function parsePauta(text: string, year: number): ParsedPautaPost[] {
   if (/Descri[çc][ãa]o das pautas/i.test(text)) {
     const dd = parseDescricao(text, year);
     if (dd.length) return dd;
+  }
+  // pautas com data por extenso (padrão das geradas com IA) — descrição rica
+  if (hasTextDate(text)) {
+    const td = parseTextDate(text, year);
+    if (td.length) return td;
   }
   const table = parseTable(text, year);
   if (table.length) return table;
