@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { CheckCircle2, AlertTriangle, Clock, CircleDashed } from "lucide-react";
+import { CheckCircle2, AlertTriangle, Clock, CircleDashed, X } from "lucide-react";
 import type { CalendarPost, CalendarPostStatus } from "@/lib/calendar";
 import { PlatformIcon } from "@/components/PlatformIcon";
 import type { Platform } from "@/lib/types";
@@ -69,20 +69,15 @@ function MonthGrid({
   year,
   month,
   posts,
-  editable = false,
-  onSetStatus,
-  busyId,
+  onOpen,
 }: {
   year: number;
   month: number;
   posts: CalendarPost[];
-  editable?: boolean;
-  onSetStatus?: (postId: string, status: CalendarPostStatus) => void;
-  busyId?: string | null;
+  onOpen: (p: CalendarPost) => void;
 }) {
   const today = new Date();
   const comemos = useMemo(() => commemorativesForYear(year), [year]);
-  const [menuFor, setMenuFor] = useState<string | null>(null);
 
   const cells = useMemo(() => {
     const first = new Date(year, month, 1).getDay();
@@ -150,51 +145,24 @@ function MonthGrid({
                 {items.map((p) => {
                   const f = fmtOf(p.format);
                   const st = displayStatus(p);
-                  const open = menuFor === p.id;
                   return (
-                    <div key={p.id} className="relative">
-                      <button
-                        type="button"
-                        onClick={() => editable && setMenuFor(open ? null : p.id)}
-                        className={`block w-full rounded-r-md border-l-[3px] px-2 py-1.5 text-left ${editable ? "transition-fluid hover:brightness-95" : "cursor-default"}`}
-                        style={{ borderColor: f.bg, background: f.soft }}
-                      >
-                        <span className="flex items-center gap-1 text-[9px] font-bold uppercase tracking-wide" style={{ color: f.text }}>
-                          <span
-                            className="h-1.5 w-1.5 shrink-0 rounded-full"
-                            style={{ background: STATUS_META[st].dot }}
-                            title={STATUS_META[st].label}
-                          />
-                          Post {numberOf[p.id]} · {f.label}
-                        </span>
-                        {p.title && <span className="mt-0.5 block text-[11px] font-semibold leading-tight text-ink line-clamp-2">{p.title}</span>}
-                      </button>
-
-                      {editable && open && onSetStatus && (
-                        <>
-                          <div className="fixed inset-0 z-20" onClick={() => setMenuFor(null)} />
-                          <div className="absolute left-0 top-full z-30 mt-1 w-40 rounded-xl border border-line bg-surface p-1 shadow-pop">
-                            <p className="px-2 py-1 text-[10px] font-bold uppercase text-muted">Marcar status</p>
-                            {STATUS_OPTS.map((o) => (
-                              <button
-                                key={o.s}
-                                disabled={busyId === p.id}
-                                onClick={() => {
-                                  onSetStatus(p.id, o.s);
-                                  setMenuFor(null);
-                                }}
-                                className={`flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-xs font-semibold hover:bg-canvas ${
-                                  p.status === o.s ? "text-ink" : "text-muted"
-                                }`}
-                              >
-                                <span className="h-2 w-2 rounded-full" style={{ background: STATUS_META[o.s].dot }} />
-                                {o.label}
-                              </button>
-                            ))}
-                          </div>
-                        </>
-                      )}
-                    </div>
+                    <button
+                      key={p.id}
+                      type="button"
+                      onClick={() => onOpen(p)}
+                      className="block w-full rounded-r-md border-l-[3px] px-2 py-1.5 text-left transition-fluid hover:brightness-95"
+                      style={{ borderColor: f.bg, background: f.soft }}
+                    >
+                      <span className="flex items-center gap-1 text-[9px] font-bold uppercase tracking-wide" style={{ color: f.text }}>
+                        <span
+                          className="h-1.5 w-1.5 shrink-0 rounded-full"
+                          style={{ background: STATUS_META[st].dot }}
+                          title={STATUS_META[st].label}
+                        />
+                        Post {numberOf[p.id]} · {f.label}
+                      </span>
+                      {p.title && <span className="mt-0.5 block text-[11px] font-semibold leading-tight text-ink line-clamp-2">{p.title}</span>}
+                    </button>
                   );
                 })}
               </div>
@@ -314,6 +282,91 @@ function DetailList({
   );
 }
 
+/** Modal de DETALHE de um post (abre ao clicar no dia): conteúdo completo + status. */
+function PostDetailModal({
+  post,
+  number,
+  editable,
+  onSetStatus,
+  busyId,
+  onClose,
+}: {
+  post: CalendarPost;
+  number: number;
+  editable?: boolean;
+  onSetStatus?: (postId: string, status: CalendarPostStatus) => void;
+  busyId?: string | null;
+  onClose: () => void;
+}) {
+  const f = fmtOf(post.format);
+  const st = displayStatus(post);
+  const S = STATUS_META[st];
+  const d = new Date(post.planned_date);
+  const dataLonga = d.toLocaleDateString("pt-BR", { weekday: "long", day: "2-digit", month: "long" });
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-0 sm:items-center sm:p-4" onClick={onClose}>
+      <div
+        className="max-h-[92vh] w-full max-w-lg overflow-y-auto rounded-t-3xl bg-surface shadow-pop sm:rounded-3xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* faixa colorida do formato */}
+        <div className="flex items-center justify-between px-5 py-4 text-white" style={{ background: f.bg }}>
+          <div>
+            <p className="text-[11px] font-bold uppercase tracking-wide opacity-90">
+              Post {number} · {f.label}
+            </p>
+            <p className="text-lg font-black capitalize leading-tight">{dataLonga}</p>
+          </div>
+          <button onClick={onClose} className="grid h-8 w-8 place-items-center rounded-full bg-white/20 text-white">
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+
+        <div className="p-5">
+          <div className="mb-2 flex flex-wrap items-center gap-2">
+            {(post.networks ?? []).slice(0, 3).map((n) => (
+              <PlatformIcon key={n} platform={n as Platform} className="h-4 w-4 text-muted" />
+            ))}
+            <span className={`flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-bold ${S.chip}`}>
+              <S.icon className="h-3.5 w-3.5" /> {S.label}
+            </span>
+          </div>
+
+          <h2 className="text-lg font-bold leading-snug text-ink">{post.title || f.label}</h2>
+          {post.brief && (
+            <p className="mt-2 whitespace-pre-wrap text-sm leading-relaxed text-muted">{post.brief}</p>
+          )}
+
+          {editable && onSetStatus && (
+            <div className="mt-4 border-t border-line pt-4">
+              <p className="mb-2 text-xs font-bold uppercase tracking-wide text-muted">Status da publicação</p>
+              <div className="flex flex-wrap gap-2">
+                {STATUS_OPTS.map((o) => {
+                  const active = post.status === o.s;
+                  return (
+                    <button
+                      key={o.s}
+                      disabled={busyId === post.id}
+                      onClick={() => onSetStatus(post.id, o.s)}
+                      className={`flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-semibold transition-fluid disabled:opacity-50 ${
+                        active ? o.on : "bg-canvas text-muted hover:text-ink"
+                      }`}
+                    >
+                      <span className="h-2 w-2 rounded-full" style={{ background: STATUS_META[o.s].dot }} />
+                      {o.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /** Legenda de cores por formato. */
 function Legend() {
   return (
@@ -349,6 +402,9 @@ export function CalendarView({
   busyId?: string | null;
 }) {
   const months = useMemo(() => byMonth(posts), [posts]);
+  // guarda o ID (não o objeto) pra o modal refletir o status atualizado após refresh
+  const [detailId, setDetailId] = useState<string | null>(null);
+  const detailPost = detailId ? posts.find((p) => p.id === detailId) ?? null : null;
 
   if (!posts.length) {
     return (
@@ -375,11 +431,23 @@ export function CalendarView({
           year={m.year}
           month={m.month}
           posts={m.posts}
+          onOpen={(p) => setDetailId(p.id)}
+        />
+      ))}
+
+      {detailPost && (
+        <PostDetailModal
+          post={detailPost}
+          number={posts
+            .slice()
+            .sort((a, b) => +new Date(a.planned_date) - +new Date(b.planned_date))
+            .findIndex((p) => p.id === detailPost.id) + 1}
           editable={editable}
           onSetStatus={onSetStatus}
           busyId={busyId}
+          onClose={() => setDetailId(null)}
         />
-      ))}
+      )}
 
       {/* Legenda de status */}
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5">

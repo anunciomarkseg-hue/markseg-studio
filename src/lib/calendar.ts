@@ -256,6 +256,7 @@ export async function listTodayPosts(): Promise<(TodayPost & { calendar_title: s
     .select("id, calendar_id, planned_date, format, title")
     .gte("planned_date", start)
     .lt("planned_date", end)
+    .neq("status", "publicado") // já publicado não precisa mais alertar
     .order("planned_date", { ascending: true });
 
   const posts = (data ?? []) as Omit<TodayPost, "group_key">[];
