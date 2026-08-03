@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { supabaseConfigured, getSupabaseAdmin } from "@/lib/supabase";
 import { listTodayPosts } from "@/lib/calendar";
+import { isCurrentUserAdmin } from "@/lib/admins";
 
 export const dynamic = "force-dynamic";
 
@@ -10,6 +11,8 @@ export const dynamic = "force-dynamic";
  */
 export async function GET() {
   if (!supabaseConfigured) return NextResponse.json({ today: [] });
+  // Alerta só pra admins — quem não é admin recebe vazio (o popup nem aparece).
+  if (!(await isCurrentUserAdmin())) return NextResponse.json({ today: [] });
   try {
     const posts = await listTodayPosts();
     if (!posts.length) return NextResponse.json({ today: [] });

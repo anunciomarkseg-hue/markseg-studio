@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { listPendingScheduling } from "@/lib/editorial";
 import { getSupabaseAdmin, supabaseConfigured } from "@/lib/supabase";
+import { isCurrentUserAdmin } from "@/lib/admins";
 
 export const dynamic = "force-dynamic";
 
@@ -10,6 +11,8 @@ export const dynamic = "force-dynamic";
  */
 export async function GET() {
   if (!supabaseConfigured) return NextResponse.json({ overdue: [] });
+  // Alerta só pra admins — quem não é admin recebe vazio (o popup nem aparece).
+  if (!(await isCurrentUserAdmin())) return NextResponse.json({ overdue: [] });
   try {
     const now = Date.now();
     const pending = await listPendingScheduling();
