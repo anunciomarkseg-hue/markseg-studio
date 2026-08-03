@@ -122,8 +122,21 @@ export async function publishPost(postId: string): Promise<PublishResult> {
 
   const { data: targets } = await sb
     .from("post_targets")
-    .select("id, account_id, status, ig_container_id, external_post_id, attempted_at")
+    .select("id, account_id, status, ig_container_id, external_post_id")
     .eq("post_id", postId);
+
+  // attempted_at é OPCIONAL: se a coluna existir, ativa a guarda por horário
+  // (anti-duplicata de legenda vazia). Se não existir, degrada sem quebrar nada.
+  const attemptedMap = new Map<string, string | null>();
+  try {
+    const { data: att } = await sb
+      .from("post_targets")
+      .select("id, attempted_at")
+      .eq("post_id", postId);
+    for (const r of att ?? []) attemptedMap.set(r.id as string, (r.attempted_at as string | null) ?? null);
+  } catch {
+    /* coluna attempted_at ainda não criada — segue sem a guarda por horário */
+  }
 
   const accountIds = (targets ?? []).map((t) => t.account_id);
   const { data: accounts } = await sb
@@ -168,10 +181,14 @@ export async function publishPost(postId: string): Promise<PublishResult> {
 
     // Marca a hora da 1ª tentativa (âncora da guarda por horário). Se já existe,
     // é RECUPERAÇÃO — a 1ª tentativa pode ter publicado e morrido antes de gravar.
-    const attemptedIso = (t.attempted_at as string | null) ?? null;
+    const attemptedIso = attemptedMap.get(t.id) ?? null;
     const isRecovery = attemptedIso ? Date.now() - new Date(attemptedIso).getTime() > 90_000 : false;
     if (!attemptedIso) {
-      await sb.from("post_targets").update({ attempted_at: now }).eq("id", t.id);
+      try {
+        await sb.from("post_targets").update({ attempted_at: now }).eq("id", t.id);
+      } catch {
+        /* coluna attempted_at ainda não criada — sem stamping, sem quebrar */
+      }
     }
 
     try {
