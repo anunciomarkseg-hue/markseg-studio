@@ -57,6 +57,12 @@ export function CalendarStudioClient({
     return [...map.entries()].sort(([a], [b]) => a.localeCompare(b, "pt-BR"));
   }, [calendars]);
 
+  // Seletor de cliente DESTA tela (independente do seletor do topo, que é dos
+  // módulos de postagem/aprovação — aqui o cliente é por nome, conectado ou não).
+  const [filterClient, setFilterClient] = useState<string>("");
+  const clientNames = useMemo(() => groups.map(([c]) => c), [groups]);
+  const shownGroups = filterClient ? groups.filter(([c]) => c === filterClient) : groups;
+
   const publicUrl = (token: string) =>
     typeof window !== "undefined" ? `${window.location.origin}/cal/${token}` : `/cal/${token}`;
 
@@ -212,7 +218,21 @@ export function CalendarStudioClient({
         <div className="grid gap-6 lg:grid-cols-[280px_1fr]">
           {/* ===== Lista por cliente ===== */}
           <div className="space-y-4">
-            {groups.map(([client, cals]) => (
+            {clientNames.length > 1 && (
+              <select
+                value={filterClient}
+                onChange={(e) => setFilterClient(e.target.value)}
+                className="w-full rounded-xl border border-line bg-surface px-3 py-2.5 text-sm font-semibold text-ink outline-none focus:border-brand-blue"
+              >
+                <option value="">Todos os clientes ({clientNames.length})</option>
+                {clientNames.map((n) => (
+                  <option key={n} value={n}>
+                    {n}
+                  </option>
+                ))}
+              </select>
+            )}
+            {shownGroups.map(([client, cals]) => (
               <div key={client}>
                 <p className="mb-1.5 px-1 text-xs font-bold uppercase tracking-wide text-muted">{client}</p>
                 <div className="space-y-2">
@@ -352,7 +372,8 @@ export function CalendarStudioClient({
             </datalist>
             <p className="mb-3 text-xs text-muted">Não precisa estar conectado no Studio — é só o nome pra organizar.</p>
 
-            <input ref={fileRef} type="file" accept="application/pdf,.pdf" className="mb-4 w-full text-sm text-muted file:mr-3 file:rounded-lg file:border-0 file:bg-brand-blue-50 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-brand-blue-700" />
+            <input ref={fileRef} type="file" accept="application/pdf,.pdf,.md,.markdown,text/markdown,text/plain" className="mb-2 w-full text-sm text-muted file:mr-3 file:rounded-lg file:border-0 file:bg-brand-blue-50 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-brand-blue-700" />
+            <p className="mb-4 text-xs text-muted">Aceita <b>PDF</b> ou <b>.md</b> (padrão MarkSeg — leitura garantida).</p>
 
             <button
               onClick={doUpload}

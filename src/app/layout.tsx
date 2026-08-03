@@ -6,6 +6,7 @@ import { Topbar } from "@/components/Topbar";
 import { AppShell } from "@/components/AppShell";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { listPendingAjustes, listPendingScheduling } from "@/lib/editorial";
+import { isAdminEmail } from "@/lib/admins";
 
 const titillium = Titillium_Web({
   subsets: ["latin"],
@@ -45,9 +46,10 @@ export default async function RootLayout({
     data: { user },
   } = await supabase.auth.getUser();
 
-  // Retornos do cliente que precisam de ação (ajustes pedidos + aprovados p/ agendar)
+  // Retornos do cliente que precisam de ação (ajustes pedidos + aprovados p/ agendar).
+  // Só admins veem o contador de alerta (igual aos popups).
   let pautaAlerts = 0;
-  if (user) {
+  if (user && isAdminEmail(user.email)) {
     try {
       const [aj, pend] = await Promise.all([listPendingAjustes(), listPendingScheduling()]);
       pautaAlerts = aj.length + pend.length;

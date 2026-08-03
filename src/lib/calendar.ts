@@ -12,8 +12,9 @@ import { getSupabaseAdmin } from "./supabase";
  */
 
 /** Status de publicação de cada post no calendário visual.
- *  "atrasado" NÃO é gravado — é derivado (pendente + data vencida). */
-export type CalendarPostStatus = "pendente" | "publicado" | "erro";
+ *  Pode ser marcado na mão; "atrasado" também aparece sozinho quando um
+ *  post pendente passa da data (derivado). */
+export type CalendarPostStatus = "pendente" | "publicado" | "erro" | "atrasado";
 
 export interface CalendarPost {
   id: string;
@@ -255,6 +256,7 @@ export async function listTodayPosts(): Promise<(TodayPost & { calendar_title: s
     .select("id, calendar_id, planned_date, format, title")
     .gte("planned_date", start)
     .lt("planned_date", end)
+    .neq("status", "publicado") // já publicado não precisa mais alertar
     .order("planned_date", { ascending: true });
 
   const posts = (data ?? []) as Omit<TodayPost, "group_key">[];

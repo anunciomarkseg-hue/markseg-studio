@@ -10,6 +10,7 @@ import {
   publishCarouselToInstagram,
   publishCarouselToFacebook,
   findRecentPublished,
+  findPublishedNearTime,
   sleep,
 } from "./meta";
 import { publishToLinkedIn } from "./linkedin";
@@ -124,6 +125,19 @@ export async function publishPost(postId: string): Promise<PublishResult> {
     .select("id, account_id, status, ig_container_id, external_post_id")
     .eq("post_id", postId);
 
+  // attempted_at é OPCIONAL: se a coluna existir, ativa a guarda por horário
+  // (anti-duplicata de legenda vazia). Se não existir, degrada sem quebrar nada.
+  const attemptedMap = new Map<string, string | null>();
+  try {
+    const { data: att } = await sb
+      .from("post_targets")
+      .select("id, attempted_at")
+      .eq("post_id", postId);
+    for (const r of att ?? []) attemptedMap.set(r.id as string, (r.attempted_at as string | null) ?? null);
+  } catch {
+    /* coluna attempted_at ainda não criada — segue sem a guarda por horário */
+  }
+
   const accountIds = (targets ?? []).map((t) => t.account_id);
   const { data: accounts } = await sb
     .from("social_accounts")
@@ -165,6 +179,18 @@ export async function publishPost(postId: string): Promise<PublishResult> {
       continue;
     }
 
+    // Marca a hora da 1ª tentativa (âncora da guarda por horário). Se já existe,
+    // é RECUPERAÇÃO — a 1ª tentativa pode ter publicado e morrido antes de gravar.
+    const attemptedIso = attemptedMap.get(t.id) ?? null;
+    const isRecovery = attemptedIso ? Date.now() - new Date(attemptedIso).getTime() > 90_000 : false;
+    if (!attemptedIso) {
+      try {
+        await sb.from("post_targets").update({ attempted_at: now }).eq("id", t.id);
+      } catch {
+        /* coluna attempted_at ainda não criada — sem stamping, sem quebrar */
+      }
+    }
+
     try {
       let externalId = "";
 
@@ -199,14 +225,26 @@ export async function publishPost(postId: string): Promise<PublishResult> {
         // GUARDA ANTI-DUPLICAÇÃO: se esse mesmo post (mesma legenda) já foi publicado
         // há pouco nessa conta, ADOTA ele em vez de publicar de novo. Impede o post
         // sair 2x mesmo se a 1ª tentativa foi morta no meio depois de já ter postado.
-        const dup = await findRecentPublished(
+        const dupByCaption = await findRecentPublished(
           acc.platform as "instagram" | "facebook",
           acc.external_id,
           acc.access_token,
           post.caption ?? "",
         );
-        if (dup) {
-          externalId = dup;
+        // Legenda vazia/curta não dá pra comparar. Em RECUPERAÇÃO, confirma pelo
+        // HORÁRIO: se já saiu um post logo após a 1ª tentativa, adota-o (não republica).
+        const dupByTime =
+          !dupByCaption && isRecovery && attemptedIso
+            ? await findPublishedNearTime(
+                acc.platform as "instagram" | "facebook",
+                acc.external_id,
+                acc.access_token,
+                new Date(new Date(attemptedIso).getTime() - 2 * 60 * 1000).toISOString(),
+              )
+            : null;
+        const already = dupByCaption || dupByTime;
+        if (already) {
+          externalId = already;
         } else if (isCarousel && acc.platform === "instagram") {
           externalId = await publishCarouselToInstagram(acc.external_id, acc.access_token, {
             imageUrls: realImages,

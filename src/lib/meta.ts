@@ -452,6 +452,42 @@ export async function findRecentPublished(
   return null;
 }
 
+/**
+ * GUARDA ANTI-DUPLICAÇÃO POR HORÁRIO (funciona com legenda VAZIA).
+ * Usada só em RECUPERAÇÃO (2ª tentativa de um post cuja 1ª morreu no meio).
+ * Procura, na própria conta, o post publicado MAIS RECENTE cujo horário é
+ * >= `sinceIso` (o horário da 1ª tentativa, com uma folga). Se achar, é quase
+ * certo que é o nosso (a 1ª tentativa publicou e morreu antes de gravar).
+ * Devolve o id pra ser adotado em vez de publicar de novo. null se não houver.
+ */
+export async function findPublishedNearTime(
+  platform: "instagram" | "facebook",
+  accountId: string,
+  token: string,
+  sinceIso: string,
+): Promise<string | null> {
+  const sinceMs = new Date(sinceIso).getTime();
+  if (!Number.isFinite(sinceMs)) return null;
+  try {
+    if (platform === "instagram") {
+      const j = await graphGet<{ data?: { id: string; timestamp: string }[] }>(
+        `${GRAPH}/${accountId}/media?fields=id,timestamp&limit=10&access_token=${token}`,
+      );
+      const hit = (j.data ?? []).find((m) => new Date(m.timestamp).getTime() >= sinceMs);
+      return hit?.id ?? null;
+    } else {
+      const j = await graphGet<{ data?: { id: string; created_time: string }[] }>(
+        `${GRAPH}/${accountId}/posts?fields=id,created_time&limit=10&access_token=${token}`,
+      );
+      const hit = (j.data ?? []).find((m) => new Date(m.created_time).getTime() >= sinceMs);
+      return hit?.id ?? null;
+    }
+  } catch {
+    /* se a checagem falhar, não bloqueia a publicação legítima */
+  }
+  return null;
+}
+
 /** Posts publicados na Página do Facebook (independente de onde foram feitos). */
 export async function getFacebookPagePosts(pageId: string, token: string, limit = 50): Promise<PublishedMedia[]> {
   type Row = { id: string; message?: string; created_time: string; permalink_url?: string; full_picture?: string };

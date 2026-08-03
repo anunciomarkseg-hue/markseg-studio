@@ -1,7 +1,7 @@
 "use client";
 
-import { useMemo } from "react";
-import { CheckCircle2, AlertTriangle, Clock, CircleDashed } from "lucide-react";
+import { useMemo, useState } from "react";
+import { CheckCircle2, AlertTriangle, Clock, CircleDashed, X } from "lucide-react";
 import type { CalendarPost, CalendarPostStatus } from "@/lib/calendar";
 import { PlatformIcon } from "@/components/PlatformIcon";
 import type { Platform } from "@/lib/types";
@@ -14,9 +14,18 @@ export type DisplayStatus = "publicado" | "erro" | "atrasado" | "pendente";
 export function displayStatus(p: CalendarPost): DisplayStatus {
   if (p.status === "publicado") return "publicado";
   if (p.status === "erro") return "erro";
-  if (new Date(p.planned_date).getTime() < Date.now()) return "atrasado";
+  if (p.status === "atrasado") return "atrasado";
+  if (new Date(p.planned_date).getTime() < Date.now()) return "atrasado"; // derivado
   return "pendente";
 }
+
+/** Opções de status que dá pra marcar na mão. */
+export const STATUS_OPTS: { s: CalendarPostStatus; label: string; on: string }[] = [
+  { s: "publicado", label: "Publicado", on: "bg-emerald-600 text-white" },
+  { s: "atrasado", label: "Atrasado", on: "bg-amber-500 text-white" },
+  { s: "erro", label: "Erro técnico", on: "bg-rose-600 text-white" },
+  { s: "pendente", label: "Pendente", on: "bg-slate-500 text-white" },
+];
 export const STATUS_META: Record<
   DisplayStatus,
   { label: string; chip: string; dot: string; icon: typeof CheckCircle2 }
@@ -56,7 +65,17 @@ function byMonth(posts: CalendarPost[]) {
     });
 }
 
-function MonthGrid({ year, month, posts }: { year: number; month: number; posts: CalendarPost[] }) {
+function MonthGrid({
+  year,
+  month,
+  posts,
+  onOpen,
+}: {
+  year: number;
+  month: number;
+  posts: CalendarPost[];
+  onOpen: (p: CalendarPost) => void;
+}) {
   const today = new Date();
   const comemos = useMemo(() => commemorativesForYear(year), [year]);
 
@@ -127,21 +146,23 @@ function MonthGrid({ year, month, posts }: { year: number; month: number; posts:
                   const f = fmtOf(p.format);
                   const st = displayStatus(p);
                   return (
-                    <div
+                    <button
                       key={p.id}
-                      className="rounded-r-md border-l-[3px] px-2 py-1.5"
+                      type="button"
+                      onClick={() => onOpen(p)}
+                      className="block w-full rounded-r-md border-l-[3px] px-2 py-1.5 text-left transition-fluid hover:brightness-95"
                       style={{ borderColor: f.bg, background: f.soft }}
                     >
-                      <p className="flex items-center gap-1 text-[9px] font-bold uppercase tracking-wide" style={{ color: f.text }}>
+                      <span className="flex items-center gap-1 text-[9px] font-bold uppercase tracking-wide" style={{ color: f.text }}>
                         <span
                           className="h-1.5 w-1.5 shrink-0 rounded-full"
                           style={{ background: STATUS_META[st].dot }}
                           title={STATUS_META[st].label}
                         />
                         Post {numberOf[p.id]} · {f.label}
-                      </p>
-                      {p.title && <p className="mt-0.5 text-[11px] font-semibold leading-tight text-ink line-clamp-2">{p.title}</p>}
-                    </div>
+                      </span>
+                      {p.title && <span className="mt-0.5 block text-[11px] font-semibold leading-tight text-ink line-clamp-2">{p.title}</span>}
+                    </button>
                   );
                 })}
               </div>
@@ -198,11 +219,6 @@ function DetailList({
   busyId?: string | null;
 }) {
   const sorted = [...posts].sort((a, b) => +new Date(a.planned_date) - +new Date(b.planned_date));
-  const SET_OPTS: { s: CalendarPostStatus; label: string; on: string }[] = [
-    { s: "publicado", label: "Publicado", on: "bg-emerald-600 text-white" },
-    { s: "erro", label: "Erro técnico", on: "bg-rose-600 text-white" },
-    { s: "pendente", label: "Pendente", on: "bg-slate-500 text-white" },
-  ];
   return (
     <div className="space-y-2.5">
       {sorted.map((p, i) => {
@@ -240,7 +256,7 @@ function DetailList({
                 {editable && onSetStatus && (
                   <div className="mt-2.5 flex flex-wrap items-center gap-1.5 border-t border-line pt-2.5">
                     <span className="text-[11px] font-semibold text-muted">Marcar:</span>
-                    {SET_OPTS.map((o) => {
+                    {STATUS_OPTS.map((o) => {
                       const active = p.status === o.s;
                       return (
                         <button
@@ -262,6 +278,91 @@ function DetailList({
           </div>
         );
       })}
+    </div>
+  );
+}
+
+/** Modal de DETALHE de um post (abre ao clicar no dia): conteúdo completo + status. */
+function PostDetailModal({
+  post,
+  number,
+  editable,
+  onSetStatus,
+  busyId,
+  onClose,
+}: {
+  post: CalendarPost;
+  number: number;
+  editable?: boolean;
+  onSetStatus?: (postId: string, status: CalendarPostStatus) => void;
+  busyId?: string | null;
+  onClose: () => void;
+}) {
+  const f = fmtOf(post.format);
+  const st = displayStatus(post);
+  const S = STATUS_META[st];
+  const d = new Date(post.planned_date);
+  const dataLonga = d.toLocaleDateString("pt-BR", { weekday: "long", day: "2-digit", month: "long" });
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-0 sm:items-center sm:p-4" onClick={onClose}>
+      <div
+        className="max-h-[92vh] w-full max-w-lg overflow-y-auto rounded-t-3xl bg-surface shadow-pop sm:rounded-3xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* faixa colorida do formato */}
+        <div className="flex items-center justify-between px-5 py-4 text-white" style={{ background: f.bg }}>
+          <div>
+            <p className="text-[11px] font-bold uppercase tracking-wide opacity-90">
+              Post {number} · {f.label}
+            </p>
+            <p className="text-lg font-black capitalize leading-tight">{dataLonga}</p>
+          </div>
+          <button onClick={onClose} className="grid h-8 w-8 place-items-center rounded-full bg-white/20 text-white">
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+
+        <div className="p-5">
+          <div className="mb-2 flex flex-wrap items-center gap-2">
+            {(post.networks ?? []).slice(0, 3).map((n) => (
+              <PlatformIcon key={n} platform={n as Platform} className="h-4 w-4 text-muted" />
+            ))}
+            <span className={`flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-bold ${S.chip}`}>
+              <S.icon className="h-3.5 w-3.5" /> {S.label}
+            </span>
+          </div>
+
+          <h2 className="text-lg font-bold leading-snug text-ink">{post.title || f.label}</h2>
+          {post.brief && (
+            <p className="mt-2 whitespace-pre-wrap text-sm leading-relaxed text-muted">{post.brief}</p>
+          )}
+
+          {editable && onSetStatus && (
+            <div className="mt-4 border-t border-line pt-4">
+              <p className="mb-2 text-xs font-bold uppercase tracking-wide text-muted">Status da publicação</p>
+              <div className="flex flex-wrap gap-2">
+                {STATUS_OPTS.map((o) => {
+                  const active = post.status === o.s;
+                  return (
+                    <button
+                      key={o.s}
+                      disabled={busyId === post.id}
+                      onClick={() => onSetStatus(post.id, o.s)}
+                      className={`flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-semibold transition-fluid disabled:opacity-50 ${
+                        active ? o.on : "bg-canvas text-muted hover:text-ink"
+                      }`}
+                    >
+                      <span className="h-2 w-2 rounded-full" style={{ background: STATUS_META[o.s].dot }} />
+                      {o.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
@@ -301,6 +402,9 @@ export function CalendarView({
   busyId?: string | null;
 }) {
   const months = useMemo(() => byMonth(posts), [posts]);
+  // guarda o ID (não o objeto) pra o modal refletir o status atualizado após refresh
+  const [detailId, setDetailId] = useState<string | null>(null);
+  const detailPost = detailId ? posts.find((p) => p.id === detailId) ?? null : null;
 
   if (!posts.length) {
     return (
@@ -322,8 +426,28 @@ export function CalendarView({
       <Legend />
 
       {months.map((m) => (
-        <MonthGrid key={`${m.year}-${m.month}`} year={m.year} month={m.month} posts={m.posts} />
+        <MonthGrid
+          key={`${m.year}-${m.month}`}
+          year={m.year}
+          month={m.month}
+          posts={m.posts}
+          onOpen={(p) => setDetailId(p.id)}
+        />
       ))}
+
+      {detailPost && (
+        <PostDetailModal
+          post={detailPost}
+          number={posts
+            .slice()
+            .sort((a, b) => +new Date(a.planned_date) - +new Date(b.planned_date))
+            .findIndex((p) => p.id === detailPost.id) + 1}
+          editable={editable}
+          onSetStatus={onSetStatus}
+          busyId={busyId}
+          onClose={() => setDetailId(null)}
+        />
+      )}
 
       {/* Legenda de status */}
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5">
