@@ -3,6 +3,8 @@ import { exchangeCodeForToken, getLongLivedToken, getPages } from "@/lib/meta";
 import { upsertAccount } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
+export const maxDuration = 60;
 
 function appOrigin(req: Request): string {
   const h = req.headers;
