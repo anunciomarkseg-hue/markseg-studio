@@ -125,11 +125,10 @@ export async function getPages(userToken: string): Promise<MetaPage[]> {
 
   const byId = new Map<string, RawPage>();
   const add = (p: RawPage) => {
-    // só Páginas COM token (publicáveis). Sem token não dá pra publicar e ainda
-    // exigiria uma chamada extra por Página — o que causava o timeout.
-    if (!p?.id || !p.access_token) return;
+    if (!p?.id) return;
     const prev = byId.get(p.id);
-    byId.set(p.id, prev ? { ...prev, ...p } : p);
+    // prioriza a versão que traz o token (o Business às vezes devolve sem)
+    byId.set(p.id, prev ? { ...prev, ...p, access_token: p.access_token || prev.access_token } : p);
   };
 
   // 1) cargo clássico
@@ -160,18 +159,38 @@ export async function getPages(userToken: string): Promise<MetaPage[]> {
     }
   }
 
-  return [...byId.values()].map((p) => ({
-    id: p.id,
-    name: p.name,
-    access_token: p.access_token,
-    instagram: p.instagram_business_account
-      ? {
-          id: p.instagram_business_account.id,
-          username: p.instagram_business_account.username,
-          followers: p.instagram_business_account.followers_count ?? 0,
-        }
-      : undefined,
-  }));
+  // Páginas do Business às vezes vêm SEM token. Busca o token individual, mas
+  // de forma LIMITADA (respeitando o deadline e um teto) pra não estourar (504).
+  const all = [...byId.values()];
+  let extraFetches = 0;
+  for (const p of all) {
+    if (p.access_token) continue;
+    if (extraFetches >= 60 || Date.now() > deadline) break;
+    extraFetches++;
+    try {
+      const r = await graphGet<{ access_token?: string }>(
+        `${GRAPH}/${p.id}?fields=access_token&access_token=${userToken}`,
+      );
+      if (r.access_token) p.access_token = r.access_token;
+    } catch {
+      /* fica sem token; será ignorada abaixo */
+    }
+  }
+
+  return all
+    .filter((p) => p.access_token) // só Páginas publicáveis (com token)
+    .map((p) => ({
+      id: p.id,
+      name: p.name,
+      access_token: p.access_token,
+      instagram: p.instagram_business_account
+        ? {
+            id: p.instagram_business_account.id,
+            username: p.instagram_business_account.username,
+            followers: p.instagram_business_account.followers_count ?? 0,
+          }
+        : undefined,
+    }));
 }
 
 /** Publica uma imagem no Instagram (cria container + publica). Retorna o id do post. */
