@@ -99,10 +99,25 @@ interface RawPage {
 /** Lista as Páginas que o usuário administra + a conta de Instagram vinculada a cada uma. */
 export async function getPages(userToken: string): Promise<MetaPage[]> {
   const fields = "id,name,access_token,instagram_business_account{id,username,followers_count}";
-  const json = await graphGet<{ data?: RawPage[] }>(
-    `${GRAPH}/me/accounts?fields=${encodeURIComponent(fields)}&limit=100&access_token=${userToken}`,
-  );
-  return (json.data ?? []).map((p) => ({
+  // PAGINA: o /me/accounts pode devolver as Páginas em vários lotes. Antes pegávamos
+  // só o primeiro, então empresas novas que caíam no lote 2+ nunca eram importadas.
+  let url: string | null =
+    `${GRAPH}/me/accounts?fields=${encodeURIComponent(fields)}&limit=100&access_token=${userToken}`;
+  const raw: RawPage[] = [];
+  const seen = new Set<string>();
+  let guard = 0;
+  while (url && guard < 25) {
+    guard++;
+    const json: { data?: RawPage[]; paging?: { next?: string } } = await graphGet(url);
+    for (const p of json.data ?? []) {
+      if (p?.id && !seen.has(p.id)) {
+        seen.add(p.id);
+        raw.push(p);
+      }
+    }
+    url = json.paging?.next ?? null; // o "next" já vem com o token embutido
+  }
+  return raw.map((p) => ({
     id: p.id,
     name: p.name,
     access_token: p.access_token,
