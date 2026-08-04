@@ -38,39 +38,39 @@ export async function GET(req: Request) {
     const longToken = await getLongLivedToken(shortToken);
     const pages = await getPages(longToken);
 
-    let count = 0;
+    // Salva tudo em PARALELO (evita estourar o tempo com muitas Páginas).
+    const tasks: Promise<void>[] = [];
     for (const pg of pages) {
-      // group_key = id da Página: liga o IG e o FB do mesmo cliente
-      const groupKey = pg.id;
-
-      // Página do Facebook
-      await upsertAccount({
-        platform: "facebook",
-        external_id: pg.id,
-        name: pg.name,
-        handle: pg.name,
-        followers: 0,
-        avatar: "gradient-blue",
-        access_token: pg.access_token,
-        group_key: groupKey,
-      });
-      count++;
-
-      // Instagram vinculado (usa o token da Página pra publicar)
-      if (pg.instagram) {
-        await upsertAccount({
-          platform: "instagram",
-          external_id: pg.instagram.id,
-          name: pg.instagram.username,
-          handle: `@${pg.instagram.username}`,
-          followers: pg.instagram.followers,
-          avatar: "gradient-orange",
+      const groupKey = pg.id; // liga o IG e o FB do mesmo cliente
+      tasks.push(
+        upsertAccount({
+          platform: "facebook",
+          external_id: pg.id,
+          name: pg.name,
+          handle: pg.name,
+          followers: 0,
+          avatar: "gradient-blue",
           access_token: pg.access_token,
           group_key: groupKey,
-        });
-        count++;
+        }),
+      );
+      if (pg.instagram) {
+        tasks.push(
+          upsertAccount({
+            platform: "instagram",
+            external_id: pg.instagram.id,
+            name: pg.instagram.username,
+            handle: `@${pg.instagram.username}`,
+            followers: pg.instagram.followers,
+            avatar: "gradient-orange",
+            access_token: pg.access_token,
+            group_key: groupKey,
+          }),
+        );
       }
     }
+    const results = await Promise.allSettled(tasks);
+    const count = results.filter((r) => r.status === "fulfilled").length;
 
     const res = back(`?conectado=${count}`);
     res.cookies.delete("meta_oauth_state");
