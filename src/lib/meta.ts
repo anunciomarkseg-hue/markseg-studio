@@ -99,12 +99,13 @@ interface RawPage {
 /** Lista as Páginas que o usuário administra + a conta de Instagram vinculada a cada uma. */
 const PAGE_FIELDS = "id,name,access_token,instagram_business_account{id,username,followers_count}";
 
-/** Segue a paginação (paging.next) de uma "edge" da Graph API e junta todos os itens. */
-async function pagedEdge<T>(startUrl: string): Promise<T[]> {
+/** Segue a paginação (paging.next) de uma "edge", com limite de tempo (deadline). */
+async function pagedEdge<T>(startUrl: string, deadline: number): Promise<T[]> {
   let url: string | null = startUrl;
   const out: T[] = [];
   let guard = 0;
   while (url && guard < 25) {
+    if (Date.now() > deadline) break; // não estoura o tempo da função (evita 504)
     guard++;
     const json: { data?: T[]; paging?: { next?: string } } = await graphGet(url);
     for (const item of json.data ?? []) out.push(item);
@@ -118,70 +119,59 @@ export async function getPages(userToken: string): Promise<MetaPage[]> {
   //  1) cargo clássico (/me/accounts)
   //  2) Páginas do Business Manager (owned_pages)  ← agências caem aqui
   //  3) Páginas de clientes no Business (client_pages)
+  // Tudo com um ORÇAMENTO DE TEMPO pra não estourar o limite da função (504).
+  const deadline = Date.now() + 35_000;
+  const enc = encodeURIComponent(PAGE_FIELDS);
+
   const byId = new Map<string, RawPage>();
   const add = (p: RawPage) => {
-    if (!p?.id) return;
+    // só Páginas COM token (publicáveis). Sem token não dá pra publicar e ainda
+    // exigiria uma chamada extra por Página — o que causava o timeout.
+    if (!p?.id || !p.access_token) return;
     const prev = byId.get(p.id);
-    // mantém/prioriza a versão que traz access_token e/ou instagram
-    if (!prev) byId.set(p.id, p);
-    else byId.set(p.id, { ...prev, ...p, access_token: p.access_token || prev.access_token });
+    byId.set(p.id, prev ? { ...prev, ...p } : p);
   };
-
-  const enc = encodeURIComponent(PAGE_FIELDS);
 
   // 1) cargo clássico
   try {
-    for (const p of await pagedEdge<RawPage>(`${GRAPH}/me/accounts?fields=${enc}&limit=100&access_token=${userToken}`))
+    for (const p of await pagedEdge<RawPage>(`${GRAPH}/me/accounts?fields=${enc}&limit=100&access_token=${userToken}`, deadline))
       add(p);
   } catch {
     /* segue com as outras origens */
   }
 
-  // 2) e 3) via Business Manager
-  try {
-    const bizs = await pagedEdge<{ id: string }>(`${GRAPH}/me/businesses?fields=id&limit=100&access_token=${userToken}`);
-    for (const b of bizs) {
-      for (const edge of ["owned_pages", "client_pages"]) {
-        try {
-          for (const p of await pagedEdge<RawPage>(`${GRAPH}/${b.id}/${edge}?fields=${enc}&limit=100&access_token=${userToken}`))
-            add(p);
-        } catch {
-          /* uma edge pode não existir/estar liberada — segue */
-        }
+  // 2) e 3) via Business Manager (as duas edges em paralelo por Business)
+  if (Date.now() < deadline) {
+    try {
+      const bizs = await pagedEdge<{ id: string }>(`${GRAPH}/me/businesses?fields=id&limit=50&access_token=${userToken}`, deadline);
+      for (const b of bizs) {
+        if (Date.now() > deadline) break;
+        const results = await Promise.all(
+          ["owned_pages", "client_pages"].map((edge) =>
+            pagedEdge<RawPage>(`${GRAPH}/${b.id}/${edge}?fields=${enc}&limit=100&access_token=${userToken}`, deadline).catch(
+              () => [] as RawPage[],
+            ),
+          ),
+        );
+        for (const arr of results) for (const p of arr) add(p);
       }
+    } catch {
+      /* sem Business ou sem permissão — segue só com o clássico */
     }
-  } catch {
-    /* sem Business ou sem permissão — segue só com o clássico */
   }
 
-  // monta o resultado; busca o token individual da Página quando o Business não devolveu
-  const out: MetaPage[] = [];
-  for (const p of byId.values()) {
-    let token = p.access_token;
-    if (!token) {
-      try {
-        const r = await graphGet<{ access_token?: string }>(
-          `${GRAPH}/${p.id}?fields=access_token&access_token=${userToken}`,
-        );
-        token = r.access_token ?? "";
-      } catch {
-        token = "";
-      }
-    }
-    out.push({
-      id: p.id,
-      name: p.name,
-      access_token: token,
-      instagram: p.instagram_business_account
-        ? {
-            id: p.instagram_business_account.id,
-            username: p.instagram_business_account.username,
-            followers: p.instagram_business_account.followers_count ?? 0,
-          }
-        : undefined,
-    });
-  }
-  return out;
+  return [...byId.values()].map((p) => ({
+    id: p.id,
+    name: p.name,
+    access_token: p.access_token,
+    instagram: p.instagram_business_account
+      ? {
+          id: p.instagram_business_account.id,
+          username: p.instagram_business_account.username,
+          followers: p.instagram_business_account.followers_count ?? 0,
+        }
+      : undefined,
+  }));
 }
 
 /** Publica uma imagem no Instagram (cria container + publica). Retorna o id do post. */
