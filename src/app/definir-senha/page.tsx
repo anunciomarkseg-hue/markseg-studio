@@ -15,23 +15,41 @@ export default function DefinirSenhaPage() {
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState(false);
 
-  // Garante a sessão a partir do link do e-mail, caso a pessoa caia direto aqui
-  // com token na URL (sem passar pelo /auth/confirm). Sem sessão, não dá pra
-  // definir a senha — foi o que travou os primeiros convites.
+  const [ready, setReady] = useState(false);
+
+  // Cria a sessão a partir do link do e-mail. O convite padrão do Supabase
+  // entrega o login no HASH da URL (#access_token=...); também tratamos
+  // token_hash (verifyOtp) e code (PKCE) como reforço. Sem isso, "criar senha"
+  // falha porque não existe sessão — foi o que travou os primeiros convites.
   useEffect(() => {
     const sb = createSupabaseBrowserClient();
-    const params = new URLSearchParams(window.location.search);
-    const token_hash = params.get("token_hash");
-    const type = params.get("type") as EmailOtpType | null;
-    const code = params.get("code");
     (async () => {
       try {
         const { data } = await sb.auth.getSession();
-        if (data.session) return; // já veio logado (pelo /auth/confirm)
+        if (data.session) return;
+
+        // 1) tokens no hash (fluxo padrão do link de convite)
+        const hash = new URLSearchParams(window.location.hash.replace(/^#/, ""));
+        const access_token = hash.get("access_token");
+        const refresh_token = hash.get("refresh_token");
+        if (access_token && refresh_token) {
+          await sb.auth.setSession({ access_token, refresh_token });
+          // limpa o hash da URL (não deixa o token à mostra)
+          window.history.replaceState(null, "", window.location.pathname);
+          return;
+        }
+
+        // 2) token_hash / code na query (reforço)
+        const params = new URLSearchParams(window.location.search);
+        const token_hash = params.get("token_hash");
+        const type = params.get("type") as EmailOtpType | null;
+        const code = params.get("code");
         if (token_hash && type) await sb.auth.verifyOtp({ type, token_hash });
         else if (code) await sb.auth.exchangeCodeForSession(code);
       } catch {
-        /* ignora — o submit avisa se ainda faltar sessão */
+        /* o submit avisa se ainda faltar sessão */
+      } finally {
+        setReady(true);
       }
     })();
   }, []);
@@ -113,11 +131,11 @@ export default function DefinirSenhaPage() {
 
           <button
             type="submit"
-            disabled={loading || done}
+            disabled={loading || done || !ready}
             className="gradient-brand flex w-full items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold text-white transition-fluid hover:opacity-95 disabled:opacity-50"
           >
-            {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <KeyRound className="h-4 w-4" />}
-            Criar senha e entrar
+            {loading || !ready ? <Loader2 className="h-4 w-4 animate-spin" /> : <KeyRound className="h-4 w-4" />}
+            {!ready ? "Validando o link…" : "Criar senha e entrar"}
           </button>
         </form>
       </div>

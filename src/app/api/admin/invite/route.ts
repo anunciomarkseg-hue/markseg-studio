@@ -80,7 +80,9 @@ export async function POST(req: Request) {
     // O link tem que passar pelo /auth/confirm (cria a sessão) ANTES de cair na
     // tela de criar senha — senão a pessoa não consegue definir a senha.
     const options = {
-      redirectTo: `${siteOrigin(req)}/auth/confirm?next=/definir-senha`,
+      // Manda direto pra tela de senha (client), que lê o token do link e cria a
+      // sessão. Assim funciona com o e-mail PADRÃO do Supabase (sem SMTP/template).
+      redirectTo: `${siteOrigin(req)}/definir-senha`,
       data: {
         full_name: name || undefined,
         role: role || undefined,
