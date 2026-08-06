@@ -103,6 +103,9 @@ export function Composer({
   const [mediaKind, setMediaKind] = useState<"image" | "video" | null>(null);
   // arquivo local do vídeo — usado pra escolher um frame como capa sem CORS
   const [videoFile, setVideoFile] = useState<File | null>(null);
+  // arrastar-e-soltar do carrossel
+  const [dragIndex, setDragIndex] = useState<number | null>(null);
+  const [overIndex, setOverIndex] = useState<number | null>(null);
   const [uploading, setUploading] = useState(false);
   const [compressPct, setCompressPct] = useState<number | null>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
@@ -308,6 +311,23 @@ export function Composer({
       [next[idx], next[j]] = [next[j], next[idx]];
       return next;
     });
+  }
+
+  /** Move um card de uma posição pra outra (arrastar e soltar). */
+  function reorderMedia(from: number, to: number) {
+    setMediaUrls((prev) => {
+      if (from === to || from < 0 || to < 0 || from >= prev.length || to >= prev.length) return prev;
+      const next = [...prev];
+      const [moved] = next.splice(from, 1);
+      next.splice(to, 0, moved);
+      return next;
+    });
+  }
+
+  function onCardDrop(target: number) {
+    if (dragIndex !== null) reorderMedia(dragIndex, target);
+    setDragIndex(null);
+    setOverIndex(null);
   }
 
   async function onCoverChange(e: React.ChangeEvent<HTMLInputElement>) {
@@ -637,9 +657,37 @@ export function Composer({
               <div>
                 <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
                   {mediaUrls.map((url, i) => (
-                    <div key={url} className="group relative aspect-square">
+                    <div
+                      key={url}
+                      draggable
+                      onDragStart={() => setDragIndex(i)}
+                      onDragOver={(e) => {
+                        e.preventDefault();
+                        if (overIndex !== i) setOverIndex(i);
+                      }}
+                      onDrop={(e) => {
+                        e.preventDefault();
+                        onCardDrop(i);
+                      }}
+                      onDragEnd={() => {
+                        setDragIndex(null);
+                        setOverIndex(null);
+                      }}
+                      className={`group relative aspect-square cursor-grab rounded-lg transition-fluid active:cursor-grabbing ${
+                        dragIndex === i ? "opacity-40" : ""
+                      } ${
+                        overIndex === i && dragIndex !== null && dragIndex !== i
+                          ? "ring-2 ring-brand-blue ring-offset-2 ring-offset-canvas"
+                          : ""
+                      }`}
+                    >
                       {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img src={url} alt={`imagem ${i + 1}`} className="h-full w-full rounded-lg object-cover" />
+                      <img
+                        src={url}
+                        alt={`imagem ${i + 1}`}
+                        draggable={false}
+                        className="pointer-events-none h-full w-full rounded-lg object-cover"
+                      />
                       {/* número da ORDEM — é a ordem que sai no feed */}
                       <span className="absolute left-1 top-1 grid h-6 w-6 place-items-center rounded-md bg-brand-blue text-xs font-bold text-white shadow">
                         {i + 1}
@@ -689,7 +737,7 @@ export function Composer({
                 <p className="mt-2 text-xs text-muted">
                   {mediaUrls.length === 0
                     ? "Adicione de 2 a 10 imagens pro carrossel."
-                    : `${mediaUrls.length}/10 · o número é a ORDEM no feed — passe o mouse e use ◀ ▶ pra reordenar.`}
+                    : `${mediaUrls.length}/10 · o número é a ORDEM no feed — arraste os cards pra reordenar (ou use ◀ ▶ no celular).`}
                 </p>
               </div>
             ) : mediaUrl ? (
