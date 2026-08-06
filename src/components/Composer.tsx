@@ -26,6 +26,7 @@ import {
 import { PlatformIcon } from "@/components/PlatformIcon";
 import { PhonePreview } from "@/components/PhonePreview";
 import { AccountMultiSelect } from "@/components/AccountMultiSelect";
+import { ReelCoverPicker } from "@/components/ReelCoverPicker";
 import { accountIdsForGroup, buildClients, groupKeyOf } from "@/lib/clients";
 import { uploadMediaDirect } from "@/lib/supabase-browser";
 import { suggestCaption } from "@/lib/caption";
@@ -100,6 +101,8 @@ export function Composer({
   // upload de mídia (carrossel = várias imagens; resto = 1)
   const [mediaUrls, setMediaUrls] = useState<string[]>([]);
   const [mediaKind, setMediaKind] = useState<"image" | "video" | null>(null);
+  // arquivo local do vídeo — usado pra escolher um frame como capa sem CORS
+  const [videoFile, setVideoFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
   const [compressPct, setCompressPct] = useState<number | null>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
@@ -119,6 +122,7 @@ export function Composer({
     setMediaType(t);
     setMediaUrls([]);
     setMediaKind(null);
+    setVideoFile(null);
     setDone(null);
   }
 
@@ -259,6 +263,8 @@ export function Composer({
         const data = await uploadMediaDirect(file, onStage);
         setMediaUrls([data.url]);
         setMediaKind(data.isVideo ? "video" : "image");
+        // guarda o arquivo local do vídeo pra poder escolher um frame como capa
+        setVideoFile(data.isVideo ? file : null);
       }
     } catch (err) {
       setUploadError((err as Error).message);
@@ -275,6 +281,21 @@ export function Composer({
     } else {
       setMediaUrls([]);
       setMediaKind(null);
+      setVideoFile(null);
+    }
+  }
+
+  /** Sobe um frame capturado do vídeo como capa do Reel. */
+  async function usarFrameComoCapa(frame: File) {
+    setUploadError(null);
+    setUploadingCover(true);
+    try {
+      const data = await uploadMediaDirect(frame);
+      setCoverUrl(data.url);
+    } catch (err) {
+      setUploadError((err as Error).message);
+    } finally {
+      setUploadingCover(false);
     }
   }
 
@@ -315,6 +336,7 @@ export function Composer({
     setShareToFeed(false);
     setMediaUrls([]);
     setMediaKind(null);
+    setVideoFile(null);
     setCoverUrl(null);
     setEditorialId(null);
     setUploadError(null);
@@ -727,11 +749,22 @@ export function Composer({
                   className="hidden"
                   onChange={onCoverChange}
                 />
-                {coverUrl ? (
-                  <div className="flex items-center gap-3 rounded-xl border border-line bg-canvas p-3">
+
+                {/* Escolher um frame do próprio vídeo como capa (igual ao app) */}
+                {mediaKind === "video" && (
+                  <ReelCoverPicker
+                    file={videoFile}
+                    url={mediaUrl}
+                    busy={uploadingCover}
+                    onPick={usarFrameComoCapa}
+                  />
+                )}
+
+                {coverUrl && (
+                  <div className="mt-3 flex items-center gap-3 rounded-xl border border-emerald-200 bg-emerald-50 p-3">
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img src={coverUrl} alt="capa do reel" className="h-16 w-16 rounded-lg object-cover" />
-                    <span className="flex-1 text-xs font-medium text-ink">Capa definida ✓</span>
+                    <span className="flex-1 text-xs font-medium text-emerald-800">Capa definida ✓</span>
                     <button
                       onClick={() => setCoverUrl(null)}
                       className="text-xs font-semibold text-rose-600 transition-fluid hover:underline"
@@ -739,21 +772,25 @@ export function Composer({
                       Remover
                     </button>
                   </div>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={() => coverInputRef.current?.click()}
-                    disabled={uploadingCover}
-                    className="flex w-full items-center gap-3 rounded-xl border border-dashed border-slate-300 bg-canvas p-3 text-left text-sm text-muted transition-fluid hover:border-brand-blue disabled:opacity-60"
-                  >
-                    {uploadingCover ? (
-                      <Loader2 className="h-5 w-5 animate-spin" />
-                    ) : (
-                      <ImagePlus className="h-5 w-5" />
-                    )}
-                    {uploadingCover ? "Enviando capa…" : "Enviar imagem de capa (thumbnail)"}
-                  </button>
                 )}
+
+                <button
+                  type="button"
+                  onClick={() => coverInputRef.current?.click()}
+                  disabled={uploadingCover}
+                  className="mt-3 flex w-full items-center gap-3 rounded-xl border border-dashed border-slate-300 bg-canvas p-3 text-left text-sm text-muted transition-fluid hover:border-brand-blue disabled:opacity-60"
+                >
+                  {uploadingCover ? (
+                    <Loader2 className="h-5 w-5 animate-spin" />
+                  ) : (
+                    <ImagePlus className="h-5 w-5" />
+                  )}
+                  {uploadingCover
+                    ? "Enviando capa…"
+                    : mediaKind === "video"
+                      ? "Ou enviar uma imagem de capa"
+                      : "Enviar imagem de capa (thumbnail)"}
+                </button>
 
                 {igSelected && (
                   <label className="mt-4 flex cursor-pointer items-start gap-3 rounded-xl border border-line bg-canvas p-3">
