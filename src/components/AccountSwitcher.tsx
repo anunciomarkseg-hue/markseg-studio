@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, usePathname } from "next/navigation";
 import { ChevronDown, Search, Check, Users } from "lucide-react";
 import type { SocialAccount } from "@/lib/types";
 import { buildClients } from "@/lib/clients";
@@ -15,11 +15,16 @@ export function AccountSwitcher({
   activeGroup: string | null;
 }) {
   const router = useRouter();
+  const pathname = usePathname();
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
 
   const clients = useMemo(() => buildClients(accounts), [accounts]);
   const active = clients.find((c) => c.key === activeGroup) ?? null;
+
+  // No Cofre não faz sentido o seletor de cliente global — ele tem as próprias
+  // abas (Clientes / Interno da agência).
+  if (pathname?.startsWith("/cofre")) return null;
 
   function choose(key: string) {
     if (key) document.cookie = `active_client=${key}; path=/; max-age=${60 * 60 * 24 * 365}`;
