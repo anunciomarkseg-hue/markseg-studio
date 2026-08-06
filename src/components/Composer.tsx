@@ -26,12 +26,48 @@ import {
 import { PlatformIcon } from "@/components/PlatformIcon";
 import { PhonePreview } from "@/components/PhonePreview";
 import { AccountMultiSelect } from "@/components/AccountMultiSelect";
-import { accountIdsForGroup } from "@/lib/clients";
+import { accountIdsForGroup, buildClients, groupKeyOf } from "@/lib/clients";
 import { uploadMediaDirect } from "@/lib/supabase-browser";
 import { suggestCaption } from "@/lib/caption";
 
 const MEDIA_TYPES: MediaType[] = ["imagem", "carrossel", "video", "reel", "story"];
 const FALLBACK_MEDIA = "gradient-brand";
+
+const PLATFORM_LABEL: Record<Platform, string> = {
+  instagram: "Instagram",
+  facebook: "Facebook",
+  linkedin: "LinkedIn",
+  tiktok: "TikTok",
+};
+
+type ApiResult = {
+  error?: string;
+  id?: string;
+  ok?: boolean;
+  published?: number;
+  failed?: number;
+  processing?: number;
+  skipped?: boolean;
+  message?: string;
+  details?: { error?: string }[];
+};
+
+/** Lê a resposta com segurança. Se o servidor devolver um erro que NÃO é JSON
+ *  (timeout/crash de plataforma — ex.: função cortada por tempo no vídeo/Reel),
+ *  vira uma mensagem legível em vez de quebrar a tela com "... is not valid JSON". */
+async function parseResponse(res: Response): Promise<ApiResult> {
+  const text = await res.text();
+  try {
+    return text ? (JSON.parse(text) as ApiResult) : {};
+  } catch {
+    const timeout = /timeout|timed out|invocation_timeout|an error occ|gateway|504/i.test(text);
+    return {
+      error: timeout
+        ? "A publicação demorou demais e o servidor cortou (comum em Reel/vídeo). Ele pode ainda estar processando — espere alguns segundos e clique em Publicar de novo."
+        : `O servidor respondeu de forma inesperada (código ${res.status}). Tente de novo em instantes.`,
+    };
+  }
+}
 
 function defaultDate() {
   const d = new Date();
@@ -110,6 +146,26 @@ export function Composer({
     ? previewTab
     : platforms[0] ?? "instagram";
   const previewAccount = selectedAccounts.find((a) => a.platform === activePlatform);
+
+  // Quais "clientes" as contas selecionadas representam (pra mostrar o destino e
+  // avisar se você misturou contas de clientes diferentes num post só).
+  const selKeys = new Set(selectedAccounts.map(groupKeyOf));
+  const selectedClients = selectedAccounts.length
+    ? buildClients(accounts).filter((c) => selKeys.has(c.key))
+    : [];
+  const multiClient = selectedClients.length > 1;
+
+  // Mantém "Publicar em" em SINCRONIA com o seletor de cliente do topo. Sem isto,
+  // trocar o cliente lá em cima NÃO mexia nas contas daqui — e dava pra publicar
+  // no cliente errado (você via um nome no topo e outro no destino do post).
+  const prevGroup = useRef(activeGroup);
+  useEffect(() => {
+    if (prevGroup.current === activeGroup) return; // ignora o 1º render (mount)
+    prevGroup.current = activeGroup;
+    setSelected(accountIdsForGroup(accounts, activeGroup));
+    setDone(null);
+    setError(null);
+  }, [activeGroup, accounts]);
 
   // vindo da Pauta ("Agendar") — preenche o composer e, ao publicar, marca a pauta como agendada
   const [editorialId, setEditorialId] = useState<string | null>(null);
@@ -266,6 +322,22 @@ export function Composer({
     if (coverInputRef.current) coverInputRef.current.value = "";
   }
 
+  /** Mostra o destino EXATO (cliente + @contas) antes de agendar/publicar. É a
+   *  trava contra postar no cliente errado. */
+  function confirmDestination(action: string, live: boolean): boolean {
+    const lines = selectedAccounts
+      .map((a) => `• ${a.handle} — ${PLATFORM_LABEL[a.platform]}`)
+      .join("\n");
+    const clientsTxt = selectedClients.map((c) => c.name).join(", ");
+    const head = multiClient
+      ? `⚠️ ATENÇÃO: são contas de ${selectedClients.length} CLIENTES diferentes (${clientsTxt}).`
+      : `Cliente: ${clientsTxt || "—"}`;
+    const liveWarn = live ? "\n\nIsso posta AO VIVO agora — fica visível pros seguidores." : "";
+    return window.confirm(
+      `${action}?\n\n${head}\n\nVai para ${selectedAccounts.length} conta(s):\n${lines}${liveWarn}\n\nConfirmar destino?`,
+    );
+  }
+
   async function submit(status: PostStatus) {
     setError(null);
     setDone(null);
@@ -273,6 +345,7 @@ export function Composer({
       setError("Selecione pelo menos uma conta.");
       return;
     }
+    if (status === "agendado" && !confirmDestination("AGENDAR", false)) return;
     setSaving(status);
     try {
       const scheduledFor = new Date(`${date}T${time}`).toISOString();
@@ -291,9 +364,9 @@ export function Composer({
           shareToFeed,
         }),
       });
-      const data = await res.json().catch(() => ({}));
+      const data = await parseResponse(res);
       if (!res.ok) throw new Error(data.error ?? `Erro ao salvar (código ${res.status})`);
-      markPautaScheduled(data.id);
+      markPautaScheduled(data.id ?? "");
 
       const label = new Date(`${date}T${time}`).toLocaleDateString("pt-BR", {
         weekday: "long",
@@ -317,12 +390,7 @@ export function Composer({
       setError("Selecione pelo menos uma conta.");
       return;
     }
-    if (
-      !window.confirm(
-        "PUBLICAR AGORA, AO VIVO?\n\nIsso cria e posta DE VERDADE na(s) conta(s) selecionada(s) — fica visível pros seguidores. Confirmar?",
-      )
-    )
-      return;
+    if (!confirmDestination("PUBLICAR AGORA", true)) return;
     setPublishing(true);
     try {
       // "Publicar agora" = a data do post é AGORA (não a do seletor), pra cair
@@ -343,23 +411,22 @@ export function Composer({
           shareToFeed,
         }),
       });
-      const data = await res.json().catch(() => ({}));
+      const data = await parseResponse(res);
       if (!res.ok) throw new Error(data.error ?? `Erro ao criar o post (código ${res.status})`);
-      markPautaScheduled(data.id);
+      markPautaScheduled(data.id ?? "");
 
       const pubRes = await fetch(`/api/posts/${data.id}/publish`, { method: "POST" });
-      const pub = await pubRes.json();
+      const pub = await parseResponse(pubRes);
       if (!pubRes.ok) throw new Error(pub.error ?? "Erro ao publicar");
 
-      if (pub.published > 0) {
+      if ((pub.published ?? 0) > 0) {
         setDone({
           status: "publicado",
           label: `${pub.published} conta(s)${pub.failed ? ` · ${pub.failed} falhou(aram)` : ""}`,
         });
         resetComposer();
       } else {
-        const firstErr =
-          pub.details?.find((d: { error?: string }) => d.error)?.error ?? "falhou";
+        const firstErr = pub.details?.find((d) => d.error)?.error ?? "falhou";
         setError(`Não publicou: ${firstErr}`);
       }
       router.refresh();
@@ -426,7 +493,27 @@ export function Composer({
                 </Link>
               </p>
             ) : (
-              <AccountMultiSelect accounts={accounts} selected={selected} onChange={onSelectChange} />
+              <>
+                <AccountMultiSelect accounts={accounts} selected={selected} onChange={onSelectChange} />
+                {selectedAccounts.length > 0 &&
+                  (multiClient ? (
+                    <div className="mt-3 flex items-start gap-2 rounded-xl border border-rose-300 bg-rose-50 p-3 text-rose-700">
+                      <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+                      <p className="text-xs font-medium">
+                        Você selecionou contas de{" "}
+                        <b>{selectedClients.length} clientes diferentes</b>:{" "}
+                        {selectedClients.map((c) => c.name).join(", ")}. Confira se é isso mesmo
+                        antes de publicar.
+                      </p>
+                    </div>
+                  ) : (
+                    <p className="mt-3 text-xs text-muted">
+                      Destino:{" "}
+                      <b className="text-ink">{selectedClients[0]?.name ?? "—"}</b> ·{" "}
+                      {selectedAccounts.length} conta(s)
+                    </p>
+                  ))}
+              </>
             )}
           </section>
 

@@ -77,6 +77,12 @@ export interface PublishResult {
  */
 export async function publishPost(postId: string): Promise<PublishResult> {
   const sb = getSupabaseAdmin();
+  // Orçamento de tempo da função (a Vercel corta em maxDuration=60s). Paramos de
+  // esperar o Reel processar bem ANTES disso e retornamos "processando" com
+  // elegância — assim a plataforma nunca mata a função no meio (o que fazia a
+  // API devolver um texto de erro não-JSON e quebrar o app na hora de publicar).
+  const fnStart = Date.now();
+  const TIME_BUDGET_MS = 50_000;
 
   // ── TRAVA ANTI-DUPLICAÇÃO ─────────────────────────────────────────────────
   // Claim ATÔMICO: só UM processo publica cada post por vez. Se outra execução
@@ -280,9 +286,8 @@ export async function publishPost(postId: string): Promise<PublishResult> {
             await sb.from("post_targets").update({ ig_container_id: containerId }).eq("id", t.id);
           }
 
-          const start = Date.now();
           let status = await getContainerStatus(containerId, acc.access_token);
-          while (status !== "FINISHED" && Date.now() - start < 45000) {
+          while (status !== "FINISHED" && Date.now() - fnStart < TIME_BUDGET_MS) {
             if (status === "ERROR" || status === "EXPIRED") {
               throw new Error(
                 "O Instagram rejeitou o vídeo. Verifique as specs de Reel (MP4/H.264, vertical 9:16, 3s–15min).",
