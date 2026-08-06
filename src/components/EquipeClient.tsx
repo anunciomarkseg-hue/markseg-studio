@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Loader2, Send, CheckCircle2, AlertCircle, Users } from "lucide-react";
+import { Loader2, Send, CheckCircle2, AlertCircle, Users, Trash2 } from "lucide-react";
 import { ACCESS_LABEL, ACCESS_LEVELS, ACCESS_HINT, type AccessLevel } from "@/lib/access";
 
 type Member = {
@@ -96,6 +96,23 @@ export function EquipeClient() {
         body: JSON.stringify({ userId, access_level }),
       });
       if (!res.ok) loadMembers(); // reverte se o servidor recusou
+    } catch {
+      loadMembers();
+    }
+  }
+
+  async function removeMember(m: Member) {
+    if (!window.confirm(`Excluir ${m.name || m.email} da plataforma? Essa ação não volta.`)) return;
+    setMembers((prev) => prev.filter((x) => x.id !== m.id)); // otimista
+    try {
+      const res = await fetch(`/api/admin/invite?userId=${encodeURIComponent(m.id)}`, {
+        method: "DELETE",
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setError(data.error ?? "Não consegui excluir.");
+        loadMembers(); // reverte
+      }
     } catch {
       loadMembers();
     }
@@ -219,7 +236,8 @@ export function EquipeClient() {
                   <th className="pb-2 pr-3 font-semibold">Pessoa</th>
                   <th className="pb-2 pr-3 font-semibold">Nível</th>
                   <th className="pb-2 pr-3 font-semibold">Status</th>
-                  <th className="pb-2 font-semibold">Entrou em</th>
+                  <th className="pb-2 pr-3 font-semibold">Entrou em</th>
+                  <th className="pb-2 font-semibold"></th>
                 </tr>
               </thead>
               <tbody>
@@ -262,7 +280,19 @@ export function EquipeClient() {
                         </span>
                       )}
                     </td>
-                    <td className="py-2.5 text-xs text-muted">{fmtDate(m.createdAt)}</td>
+                    <td className="py-2.5 pr-3 text-xs text-muted">{fmtDate(m.createdAt)}</td>
+                    <td className="py-2.5 text-right">
+                      {!m.fixedAdmin && (
+                        <button
+                          onClick={() => removeMember(m)}
+                          title="Excluir da plataforma"
+                          aria-label="Excluir"
+                          className="inline-grid h-8 w-8 place-items-center rounded-lg text-slate-400 transition-fluid hover:bg-rose-50 hover:text-rose-600"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      )}
+                    </td>
                   </tr>
                 ))}
               </tbody>

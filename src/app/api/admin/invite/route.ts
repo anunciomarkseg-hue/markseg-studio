@@ -40,7 +40,9 @@ export async function GET() {
         level: accessLevelOf(u),
         // admin definido pela lista de e-mails é fixo (não dá pra rebaixar pela tela).
         fixedAdmin: isAdminEmail(u.email),
-        confirmed: Boolean(u.email_confirmed_at ?? u.confirmed_at),
+        // "ativo" = já entrou pelo menos uma vez (convite marca e-mail confirmado,
+        // então não dá pra usar isso pra saber se a pessoa realmente ativou).
+        confirmed: Boolean(u.last_sign_in_at),
         lastSignIn: u.last_sign_in_at ?? null,
         createdAt: u.created_at ?? null,
       }))
@@ -126,7 +128,41 @@ async function findUserByEmail(
   const { data } = await sb.auth.admin.listUsers({ perPage: 200 });
   const u = (data?.users ?? []).find((x) => (x.email ?? "").toLowerCase() === email);
   if (!u) return null;
-  return { id: u.id, confirmed: Boolean(u.email_confirmed_at ?? u.confirmed_at) };
+  // "ativo" só se já entrou de fato (last_sign_in_at). Convite marca e-mail
+  // confirmado, então quem foi convidado e nunca entrou conta como pendente.
+  return { id: u.id, confirmed: Boolean(u.last_sign_in_at) };
+}
+
+/** Exclui uma pessoa da plataforma (só admin). */
+export async function DELETE(req: Request) {
+  if (!supabaseConfigured) {
+    return NextResponse.json({ error: "Supabase não configurado" }, { status: 500 });
+  }
+  if (!(await isCurrentUserAdmin())) {
+    return NextResponse.json({ error: "Só administradores podem excluir." }, { status: 403 });
+  }
+
+  const userId = new URL(req.url).searchParams.get("userId") ?? "";
+  if (!userId) {
+    return NextResponse.json({ error: "Usuário não informado." }, { status: 400 });
+  }
+
+  try {
+    const sb = getSupabaseAdmin();
+    const { data: got } = await sb.auth.admin.getUserById(userId);
+    // não deixa excluir admin fixo (definido pela lista de e-mails)
+    if (got?.user && isAdminEmail(got.user.email)) {
+      return NextResponse.json(
+        { error: "Esse usuário é admin fixo e não pode ser excluído aqui." },
+        { status: 400 },
+      );
+    }
+    const { error } = await sb.auth.admin.deleteUser(userId);
+    if (error) throw error;
+    return NextResponse.json({ ok: true });
+  } catch (e) {
+    return NextResponse.json({ error: (e as Error).message }, { status: 500 });
+  }
 }
 
 /** Altera o nível de acesso de uma pessoa (só admin). */
