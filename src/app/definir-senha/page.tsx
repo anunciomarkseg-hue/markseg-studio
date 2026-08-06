@@ -1,9 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import { Loader2, KeyRound, CheckCircle2 } from "lucide-react";
+import { type EmailOtpType } from "@supabase/supabase-js";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 
 export default function DefinirSenhaPage() {
@@ -13,6 +14,27 @@ export default function DefinirSenhaPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState(false);
+
+  // Garante a sessão a partir do link do e-mail, caso a pessoa caia direto aqui
+  // com token na URL (sem passar pelo /auth/confirm). Sem sessão, não dá pra
+  // definir a senha — foi o que travou os primeiros convites.
+  useEffect(() => {
+    const sb = createSupabaseBrowserClient();
+    const params = new URLSearchParams(window.location.search);
+    const token_hash = params.get("token_hash");
+    const type = params.get("type") as EmailOtpType | null;
+    const code = params.get("code");
+    (async () => {
+      try {
+        const { data } = await sb.auth.getSession();
+        if (data.session) return; // já veio logado (pelo /auth/confirm)
+        if (token_hash && type) await sb.auth.verifyOtp({ type, token_hash });
+        else if (code) await sb.auth.exchangeCodeForSession(code);
+      } catch {
+        /* ignora — o submit avisa se ainda faltar sessão */
+      }
+    })();
+  }, []);
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();

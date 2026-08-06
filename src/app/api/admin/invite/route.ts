@@ -77,30 +77,54 @@ export async function POST(req: Request) {
 
   try {
     const sb = getSupabaseAdmin();
-    const { error } = await sb.auth.admin.inviteUserByEmail(email, {
-      redirectTo: `${siteOrigin(req)}/definir-senha`,
+    // O link tem que passar pelo /auth/confirm (cria a sessão) ANTES de cair na
+    // tela de criar senha — senão a pessoa não consegue definir a senha.
+    const options = {
+      redirectTo: `${siteOrigin(req)}/auth/confirm?next=/definir-senha`,
       data: {
         full_name: name || undefined,
         role: role || undefined,
         access_level,
         invited_via: "studio",
       },
-    });
+    };
+
+    let { error } = await sb.auth.admin.inviteUserByEmail(email, options);
+
+    // Já existe? Se for convite PENDENTE (nunca confirmou), reenvia; se já é ativo, avisa.
+    if (error && /already|registered|exists|duplicate/i.test(error.message)) {
+      const existing = await findUserByEmail(sb, email);
+      if (existing && existing.confirmed) {
+        return NextResponse.json(
+          { error: "Esse e-mail já tem cadastro ativo. A pessoa entra em /login (ou usa 'esqueci a senha')." },
+          { status: 400 },
+        );
+      }
+      if (existing) {
+        // apaga o convite pendente e manda um novo (link fresco)
+        await sb.auth.admin.deleteUser(existing.id);
+        ({ error } = await sb.auth.admin.inviteUserByEmail(email, options));
+      }
+    }
+
     if (error) {
-      const already = /already.*(registered|exists)|been registered|duplicate/i.test(error.message);
-      return NextResponse.json(
-        {
-          error: already
-            ? "Esse e-mail já tem cadastro. A pessoa já pode entrar em /login (ou usar 'esqueci a senha')."
-            : error.message,
-        },
-        { status: 400 },
-      );
+      return NextResponse.json({ error: error.message }, { status: 400 });
     }
     return NextResponse.json({ ok: true, email });
   } catch (e) {
     return NextResponse.json({ error: (e as Error).message }, { status: 500 });
   }
+}
+
+/** Acha um usuário pelo e-mail (varre a lista do Admin). */
+async function findUserByEmail(
+  sb: ReturnType<typeof getSupabaseAdmin>,
+  email: string,
+): Promise<{ id: string; confirmed: boolean } | null> {
+  const { data } = await sb.auth.admin.listUsers({ perPage: 200 });
+  const u = (data?.users ?? []).find((x) => (x.email ?? "").toLowerCase() === email);
+  if (!u) return null;
+  return { id: u.id, confirmed: Boolean(u.email_confirmed_at ?? u.confirmed_at) };
 }
 
 /** Altera o nível de acesso de uma pessoa (só admin). */
