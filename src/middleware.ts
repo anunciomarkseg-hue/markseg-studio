@@ -71,7 +71,7 @@ export async function middleware(request: NextRequest) {
     const level = accessLevelOf(user);
     const needsPublish = path.startsWith("/publicar");
     const needsAdmin = path.startsWith("/contas") || path.startsWith("/equipe");
-    const needsVault = path.startsWith("/cofre"); // cofre: admin ou editor
+    const needsVault = path.startsWith("/cofre"); // cofre: só admin (canUseVault)
     if (
       (needsPublish && !canPublish(level)) ||
       (needsAdmin && level !== "admin") ||

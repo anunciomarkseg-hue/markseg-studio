@@ -92,9 +92,11 @@ export function allowedSensitivities(v: VaultViewer): Sensitivity[] {
   return SENSITIVITIES.filter((s) => canAccessSensitivity(s, v));
 }
 
-/** Pode entrar no Cofre? (admin ou editor — viewer não tem o que revelar) */
+/** Pode entrar no Cofre? Hoje: SÓ admin (menu, página, API e middleware usam
+ *  esta função). Pra liberar editores no futuro, troque por
+ *  `level === "admin" || level === "editor"` — o resto se ajusta sozinho. */
 export function canUseVault(level: AccessLevel): boolean {
-  return level === "admin" || level === "editor";
+  return level === "admin";
 }
 
 // ── Formatos que o back-end devolve pro navegador ───────────────────────────
