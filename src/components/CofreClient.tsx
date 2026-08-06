@@ -670,7 +670,7 @@ function FolderForm({
           <input
             value={name}
             onChange={(e) => setName(e.target.value)}
-            placeholder={scope === "cliente" ? "Ex.: DBP Cleaning Services" : "Ex.: Bancos da agência"}
+            placeholder={scope === "cliente" ? "Ex.: Parlseg Academy" : "Ex.: Bancos da agência"}
             className={field}
             autoFocus
           />
