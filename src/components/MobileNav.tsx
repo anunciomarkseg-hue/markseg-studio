@@ -20,6 +20,7 @@ import {
   KeyRound,
   FileBarChart,
   ExternalLink,
+  Users,
 } from "lucide-react";
 import { REPORT_GENERATOR_URL } from "./Sidebar";
 
@@ -34,7 +35,15 @@ const NAV = [
   { href: "/relatorios", label: "Analytics", icon: BarChart3 },
 ];
 
-export function MobileNav({ userEmail, pautaAlerts = 0 }: { userEmail: string | null; pautaAlerts?: number }) {
+export function MobileNav({
+  userEmail,
+  pautaAlerts = 0,
+  isAdmin = false,
+}: {
+  userEmail: string | null;
+  pautaAlerts?: number;
+  isAdmin?: boolean;
+}) {
   const [open, setOpen] = useState(false);
   const pathname = usePathname();
   const isActive = (href: string) => (href === "/" ? pathname === "/" : pathname.startsWith(href));
@@ -95,6 +104,23 @@ export function MobileNav({ userEmail, pautaAlerts = 0 }: { userEmail: string | 
                   </Link>
                 );
               })}
+
+              {/* Área de admin — só admins veem */}
+              {isAdmin && (
+                <Link
+                  href="/equipe"
+                  onClick={() => setOpen(false)}
+                  className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium ${
+                    isActive("/equipe") ? "bg-brand-blue-50 text-brand-blue-700" : "text-muted"
+                  }`}
+                >
+                  <Users
+                    className={`h-[18px] w-[18px] ${isActive("/equipe") ? "text-brand-blue" : "text-slate-400"}`}
+                    strokeWidth={2.2}
+                  />
+                  <span className="flex-1">Equipe</span>
+                </Link>
+              )}
 
               {/* Ferramenta externa: Gerador de relatórios */}
               <a

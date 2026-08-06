@@ -17,6 +17,7 @@ import {
   KeyRound,
   FileBarChart,
   ExternalLink,
+  Users,
 } from "lucide-react";
 
 const NAV = [
@@ -34,7 +35,15 @@ const NAV = [
 export const REPORT_GENERATOR_URL =
   "https://markseg-agente-g4jgjxglkbjbqd7tdsp4a2.streamlit.app/";
 
-export function Sidebar({ userEmail, pautaAlerts = 0 }: { userEmail: string | null; pautaAlerts?: number }) {
+export function Sidebar({
+  userEmail,
+  pautaAlerts = 0,
+  isAdmin = false,
+}: {
+  userEmail: string | null;
+  pautaAlerts?: number;
+  isAdmin?: boolean;
+}) {
   const pathname = usePathname();
 
   const isActive = (href: string) =>
@@ -86,6 +95,24 @@ export function Sidebar({ userEmail, pautaAlerts = 0 }: { userEmail: string | nu
             </Link>
           );
         })}
+
+        {/* Área de admin — só admins veem */}
+        {isAdmin && (
+          <Link
+            href="/equipe"
+            className={`group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-fluid ${
+              isActive("/equipe")
+                ? "bg-brand-blue-50 text-brand-blue-700"
+                : "text-muted hover:bg-canvas hover:text-ink"
+            }`}
+          >
+            <Users
+              className={`h-[18px] w-[18px] ${isActive("/equipe") ? "text-brand-blue" : "text-slate-400 group-hover:text-ink"}`}
+              strokeWidth={2.2}
+            />
+            <span className="flex-1">Equipe</span>
+          </Link>
+        )}
 
         {/* Ferramenta externa: Gerador de relatórios (abre em nova aba) */}
         <a

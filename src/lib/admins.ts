@@ -9,7 +9,7 @@ import { createSupabaseServerClient } from "./supabase/server";
  * setada, cai na lista abaixo. Pra adicionar/remover admin: edite ADMIN_EMAILS
  * no painel da Vercel (ou esta lista).
  */
-const FALLBACK_ADMINS = ["marketinglionstorm@gmail.com"];
+const FALLBACK_ADMINS = ["marketinglionstorm@gmail.com", "anunciomarkseg@gmail.com"];
 
 export function adminEmails(): string[] {
   const env = process.env.ADMIN_EMAILS;

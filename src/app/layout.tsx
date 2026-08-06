@@ -46,10 +46,12 @@ export default async function RootLayout({
     data: { user },
   } = await supabase.auth.getUser();
 
+  const isAdmin = isAdminEmail(user?.email);
+
   // Retornos do cliente que precisam de ação (ajustes pedidos + aprovados p/ agendar).
   // Só admins veem o contador de alerta (igual aos popups).
   let pautaAlerts = 0;
-  if (user && isAdminEmail(user.email)) {
+  if (user && isAdmin) {
     try {
       const [aj, pend] = await Promise.all([listPendingAjustes(), listPendingScheduling()]);
       pautaAlerts = aj.length + pend.length;
@@ -62,8 +64,8 @@ export default async function RootLayout({
     <html lang="pt-BR" className={`${titillium.variable} ${inter.variable}`}>
       <body className="font-sans">
         <AppShell
-          sidebar={<Sidebar userEmail={user?.email ?? null} pautaAlerts={pautaAlerts} />}
-          topbar={<Topbar userEmail={user?.email ?? null} pautaAlerts={pautaAlerts} />}
+          sidebar={<Sidebar userEmail={user?.email ?? null} pautaAlerts={pautaAlerts} isAdmin={isAdmin} />}
+          topbar={<Topbar userEmail={user?.email ?? null} pautaAlerts={pautaAlerts} isAdmin={isAdmin} />}
         >
           {children}
         </AppShell>
