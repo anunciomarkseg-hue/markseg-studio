@@ -19,15 +19,24 @@ import {
   ExternalLink,
   Users,
 } from "lucide-react";
+import { canPublish, type AccessLevel } from "@/lib/access";
+import type { ComponentType } from "react";
 
-const NAV = [
+type NavItem = {
+  href: string;
+  label: string;
+  icon: ComponentType<{ className?: string; strokeWidth?: number }>;
+  adminOnly?: boolean;
+};
+
+const NAV: NavItem[] = [
   { href: "/", label: "Visão geral", icon: LayoutDashboard },
   { href: "/pauta", label: "Pauta", icon: ClipboardList },
   { href: "/calendario", label: "Calendário", icon: CalendarDays },
   { href: "/publicacoes", label: "Publicações", icon: ListChecks },
   { href: "/mural", label: "Mural", icon: StickyNote },
   { href: "/conversas", label: "Conversas", icon: MessageCircle },
-  { href: "/contas", label: "Contas", icon: AtSign },
+  { href: "/contas", label: "Contas", icon: AtSign, adminOnly: true },
   { href: "/relatorios", label: "Analytics", icon: BarChart3 },
 ];
 
@@ -38,13 +47,16 @@ export const REPORT_GENERATOR_URL =
 export function Sidebar({
   userEmail,
   pautaAlerts = 0,
-  isAdmin = false,
+  level = "viewer",
 }: {
   userEmail: string | null;
   pautaAlerts?: number;
-  isAdmin?: boolean;
+  level?: AccessLevel;
 }) {
   const pathname = usePathname();
+  const isAdmin = level === "admin";
+  const podePublicar = canPublish(level);
+  const nav = NAV.filter((n) => !n.adminOnly || isAdmin);
 
   const isActive = (href: string) =>
     href === "/" ? pathname === "/" : pathname.startsWith(href);
@@ -59,18 +71,20 @@ export function Sidebar({
         <Image src="/brand/markseg-logo.png" alt="MarkSeg Studio" width={132} height={38} priority />
       </Link>
 
-      {/* CTA principal */}
-      <Link
-        href="/publicar"
-        className="gradient-brand mb-6 flex items-center justify-center gap-2 rounded-xl px-4 py-3 text-sm font-semibold text-white shadow-card transition-fluid hover:opacity-95 hover:shadow-pop"
-      >
-        <Plus className="h-4 w-4" strokeWidth={2.6} />
-        Nova publicação
-      </Link>
+      {/* CTA principal — só quem pode publicar */}
+      {podePublicar && (
+        <Link
+          href="/publicar"
+          className="gradient-brand mb-6 flex items-center justify-center gap-2 rounded-xl px-4 py-3 text-sm font-semibold text-white shadow-card transition-fluid hover:opacity-95 hover:shadow-pop"
+        >
+          <Plus className="h-4 w-4" strokeWidth={2.6} />
+          Nova publicação
+        </Link>
+      )}
 
       {/* Navegação */}
       <nav className="flex flex-1 flex-col gap-1">
-        {NAV.map(({ href, label, icon: Icon }) => {
+        {nav.map(({ href, label, icon: Icon }) => {
           const active = isActive(href);
           return (
             <Link

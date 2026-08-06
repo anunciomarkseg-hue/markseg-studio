@@ -1,5 +1,3 @@
-import { createSupabaseServerClient } from "./supabase/server";
-
 /**
  * ADMINS do Studio — só eles recebem os alertas internos (posts atrasados,
  * posts do dia no calendário). Todo mundo continua usando o Studio normalmente;
@@ -20,17 +18,4 @@ export function adminEmails(): string[] {
 export function isAdminEmail(email?: string | null): boolean {
   if (!email) return false;
   return adminEmails().includes(email.toLowerCase());
-}
-
-/** true se o usuário logado (via cookie de sessão) é admin. Usar em rotas /api. */
-export async function isCurrentUserAdmin(): Promise<boolean> {
-  try {
-    const supabase = await createSupabaseServerClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-    return isAdminEmail(user?.email);
-  } catch {
-    return false;
-  }
 }

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { supabaseConfigured, getSupabaseAdmin } from "@/lib/supabase";
 import { listTodayPosts } from "@/lib/calendar";
-import { isCurrentUserAdmin } from "@/lib/admins";
+import { isCurrentUserAdmin } from "@/lib/admin-guard";
 
 export const dynamic = "force-dynamic";
 

@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { isCurrentUserAdmin } from "@/lib/admins";
+import { isCurrentUserAdmin } from "@/lib/admin-guard";
 import { EquipeClient } from "@/components/EquipeClient";
 
 export const dynamic = "force-dynamic";

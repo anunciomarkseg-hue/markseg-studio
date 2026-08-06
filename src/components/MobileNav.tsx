@@ -23,30 +23,42 @@ import {
   Users,
 } from "lucide-react";
 import { REPORT_GENERATOR_URL } from "./Sidebar";
+import { canPublish, type AccessLevel } from "@/lib/access";
+import type { ComponentType } from "react";
 
-const NAV = [
+type NavItem = {
+  href: string;
+  label: string;
+  icon: ComponentType<{ className?: string; strokeWidth?: number }>;
+  adminOnly?: boolean;
+};
+
+const NAV: NavItem[] = [
   { href: "/", label: "Visão geral", icon: LayoutDashboard },
   { href: "/pauta", label: "Pauta", icon: ClipboardList },
   { href: "/calendario", label: "Calendário", icon: CalendarDays },
   { href: "/publicacoes", label: "Publicações", icon: ListChecks },
   { href: "/mural", label: "Mural", icon: StickyNote },
   { href: "/conversas", label: "Conversas", icon: MessageCircle },
-  { href: "/contas", label: "Contas", icon: AtSign },
+  { href: "/contas", label: "Contas", icon: AtSign, adminOnly: true },
   { href: "/relatorios", label: "Analytics", icon: BarChart3 },
 ];
 
 export function MobileNav({
   userEmail,
   pautaAlerts = 0,
-  isAdmin = false,
+  level = "viewer",
 }: {
   userEmail: string | null;
   pautaAlerts?: number;
-  isAdmin?: boolean;
+  level?: AccessLevel;
 }) {
   const [open, setOpen] = useState(false);
   const pathname = usePathname();
   const isActive = (href: string) => (href === "/" ? pathname === "/" : pathname.startsWith(href));
+  const isAdmin = level === "admin";
+  const podePublicar = canPublish(level);
+  const nav = NAV.filter((n) => !n.adminOnly || isAdmin);
 
   return (
     <>
@@ -74,16 +86,18 @@ export function MobileNav({
               </button>
             </div>
 
-            <Link
-              href="/publicar"
-              onClick={() => setOpen(false)}
-              className="gradient-brand mb-4 flex items-center justify-center gap-2 rounded-xl px-4 py-3 text-sm font-semibold text-white"
-            >
-              <Plus className="h-4 w-4" strokeWidth={2.6} /> Nova publicação
-            </Link>
+            {podePublicar && (
+              <Link
+                href="/publicar"
+                onClick={() => setOpen(false)}
+                className="gradient-brand mb-4 flex items-center justify-center gap-2 rounded-xl px-4 py-3 text-sm font-semibold text-white"
+              >
+                <Plus className="h-4 w-4" strokeWidth={2.6} /> Nova publicação
+              </Link>
+            )}
 
             <nav className="flex flex-1 flex-col gap-1">
-              {NAV.map(({ href, label, icon: Icon }) => {
+              {nav.map(({ href, label, icon: Icon }) => {
                 const active = isActive(href);
                 return (
                   <Link

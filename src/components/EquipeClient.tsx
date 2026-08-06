@@ -2,12 +2,15 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { Loader2, Send, CheckCircle2, AlertCircle, Users } from "lucide-react";
+import { ACCESS_LABEL, ACCESS_LEVELS, ACCESS_HINT, type AccessLevel } from "@/lib/access";
 
 type Member = {
   id: string;
   email: string;
   name: string;
   role: string;
+  level: AccessLevel;
+  fixedAdmin: boolean;
   confirmed: boolean;
   lastSignIn: string | null;
   createdAt: string | null;
@@ -22,10 +25,17 @@ function fmtDate(iso: string | null): string {
   }
 }
 
+const LEVEL_BADGE: Record<AccessLevel, string> = {
+  admin: "bg-brand-blue-50 text-brand-blue-700",
+  editor: "bg-violet-50 text-violet-700",
+  viewer: "bg-slate-100 text-slate-600",
+};
+
 export function EquipeClient() {
   const [email, setEmail] = useState("");
   const [name, setName] = useState("");
   const [role, setRole] = useState("");
+  const [level, setLevel] = useState<AccessLevel>("editor");
   const [sending, setSending] = useState(false);
   const [done, setDone] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -59,11 +69,13 @@ export function EquipeClient() {
       const res = await fetch("/api/admin/invite", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, name, role }),
+        body: JSON.stringify({ email, name, role, access_level: level }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error ?? "Não consegui enviar o convite.");
-      setDone(`Convite enviado para ${data.email ?? email}. A pessoa vai receber um e-mail pra criar a senha.`);
+      setDone(
+        `Convite enviado para ${data.email ?? email} como ${ACCESS_LABEL[level]}. A pessoa vai receber um e-mail pra criar a senha.`,
+      );
       setEmail("");
       setName("");
       setRole("");
@@ -75,6 +87,20 @@ export function EquipeClient() {
     }
   }
 
+  async function changeLevel(userId: string, access_level: AccessLevel) {
+    setMembers((prev) => prev.map((m) => (m.id === userId ? { ...m, level: access_level } : m)));
+    try {
+      const res = await fetch("/api/admin/invite", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId, access_level }),
+      });
+      if (!res.ok) loadMembers(); // reverte se o servidor recusou
+    } catch {
+      loadMembers();
+    }
+  }
+
   return (
     <div className="mx-auto max-w-4xl">
       <div className="mb-6 animate-rise">
@@ -82,7 +108,7 @@ export function EquipeClient() {
           <Users className="h-6 w-6 text-brand-blue" /> Equipe & acessos
         </h1>
         <p className="mt-1 text-sm text-muted">
-          Convide pessoas por e-mail. Elas recebem um link pra criar a senha e já entram na plataforma.
+          Convide pessoas por e-mail e defina o nível de acesso. Elas recebem um link pra criar a senha.
         </p>
       </div>
 
@@ -134,6 +160,26 @@ export function EquipeClient() {
             />
           </div>
           <div className="sm:col-span-2">
+            <label className="mb-1 block text-xs font-semibold text-muted">Nível de acesso</label>
+            <div className="flex flex-wrap gap-2">
+              {ACCESS_LEVELS.map((lvl) => (
+                <button
+                  key={lvl}
+                  type="button"
+                  onClick={() => setLevel(lvl)}
+                  className={`rounded-xl border px-3 py-1.5 text-sm font-semibold transition-fluid ${
+                    level === lvl
+                      ? "border-brand-blue bg-brand-blue-50 text-brand-blue-700"
+                      : "border-line bg-canvas text-muted hover:text-ink"
+                  }`}
+                >
+                  {ACCESS_LABEL[lvl]}
+                </button>
+              ))}
+            </div>
+            <p className="mt-1.5 text-xs text-muted">{ACCESS_HINT[level]}</p>
+          </div>
+          <div className="sm:col-span-2">
             <button
               type="submit"
               disabled={sending}
@@ -171,7 +217,7 @@ export function EquipeClient() {
               <thead>
                 <tr className="border-b border-line text-left text-xs text-muted">
                   <th className="pb-2 pr-3 font-semibold">Pessoa</th>
-                  <th className="pb-2 pr-3 font-semibold">Setor</th>
+                  <th className="pb-2 pr-3 font-semibold">Nível</th>
                   <th className="pb-2 pr-3 font-semibold">Status</th>
                   <th className="pb-2 font-semibold">Entrou em</th>
                 </tr>
@@ -181,9 +227,30 @@ export function EquipeClient() {
                   <tr key={m.id} className="border-b border-line/60 last:border-0">
                     <td className="py-2.5 pr-3">
                       <span className="block font-semibold text-ink">{m.name || m.email.split("@")[0]}</span>
-                      <span className="block text-xs text-muted">{m.email}</span>
+                      <span className="block text-xs text-muted">
+                        {m.email}
+                        {m.role ? ` · ${m.role}` : ""}
+                      </span>
                     </td>
-                    <td className="py-2.5 pr-3 text-muted">{m.role || "—"}</td>
+                    <td className="py-2.5 pr-3">
+                      {m.fixedAdmin ? (
+                        <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${LEVEL_BADGE.admin}`}>
+                          Admin (fixo)
+                        </span>
+                      ) : (
+                        <select
+                          value={m.level}
+                          onChange={(e) => changeLevel(m.id, e.target.value as AccessLevel)}
+                          className="rounded-lg border border-line bg-canvas px-2 py-1 text-xs font-semibold text-ink outline-none focus:border-brand-blue"
+                        >
+                          {ACCESS_LEVELS.map((lvl) => (
+                            <option key={lvl} value={lvl}>
+                              {ACCESS_LABEL[lvl]}
+                            </option>
+                          ))}
+                        </select>
+                      )}
+                    </td>
                     <td className="py-2.5 pr-3">
                       {m.confirmed ? (
                         <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-semibold text-emerald-700">

@@ -1,5 +1,6 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
+import { accessLevelOf, canPublish } from "@/lib/access";
 
 /** Renova a sessão e protege as rotas: sem login -> manda pro /login. */
 export async function middleware(request: NextRequest) {
@@ -62,6 +63,19 @@ export async function middleware(request: NextRequest) {
     const url = request.nextUrl.clone();
     url.pathname = "/";
     return NextResponse.redirect(url);
+  }
+
+  // ── Controle por NÍVEL de acesso (páginas) ────────────────────────────────
+  if (user) {
+    const level = accessLevelOf(user);
+    const needsPublish = path.startsWith("/publicar");
+    const needsAdmin = path.startsWith("/contas") || path.startsWith("/equipe");
+    if ((needsPublish && !canPublish(level)) || (needsAdmin && level !== "admin")) {
+      const url = request.nextUrl.clone();
+      url.pathname = "/";
+      url.search = "";
+      return NextResponse.redirect(url);
+    }
   }
 
   return response;

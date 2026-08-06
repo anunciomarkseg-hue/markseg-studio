@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createPost, listPosts } from "@/lib/db";
 import { supabaseConfigured } from "@/lib/supabase";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { accessLevelOf, canPublish } from "@/lib/access";
 import type { MediaType, PostStatus } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -70,6 +71,13 @@ export async function POST(req: Request) {
       data: { user },
     } = await sb.auth.getUser();
     createdBy = user?.email ?? null;
+    // Nível "Visualização" não cria/agenda posts (só admin e editor).
+    if (!canPublish(accessLevelOf(user))) {
+      return NextResponse.json(
+        { error: "Seu nível de acesso (Visualização) não permite criar publicações. Fale com um admin." },
+        { status: 403 },
+      );
+    }
   } catch {
     /* sem sessão legível — segue sem autor */
   }

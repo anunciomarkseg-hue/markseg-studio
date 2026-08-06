@@ -6,6 +6,7 @@ import { getActiveGroup } from "@/lib/active";
 import type { SocialAccount } from "@/lib/types";
 import { AccountSwitcher } from "./AccountSwitcher";
 import { MobileNav } from "./MobileNav";
+import type { AccessLevel } from "@/lib/access";
 
 async function safeAccounts(): Promise<SocialAccount[]> {
   if (!supabaseConfigured) return [];
@@ -19,17 +20,17 @@ async function safeAccounts(): Promise<SocialAccount[]> {
 export async function Topbar({
   userEmail,
   pautaAlerts = 0,
-  isAdmin = false,
+  level = "viewer",
 }: {
   userEmail: string | null;
   pautaAlerts?: number;
-  isAdmin?: boolean;
+  level?: AccessLevel;
 }) {
   const [accounts, activeGroup] = await Promise.all([safeAccounts(), getActiveGroup()]);
 
   return (
     <header className="sticky top-0 z-20 flex h-16 items-center gap-3 border-b border-line bg-surface/80 px-4 backdrop-blur lg:px-8">
-      <MobileNav userEmail={userEmail} pautaAlerts={pautaAlerts} isAdmin={isAdmin} />
+      <MobileNav userEmail={userEmail} pautaAlerts={pautaAlerts} level={level} />
 
       {/* Seletor de cliente (IG + FB juntos) */}
       <AccountSwitcher accounts={accounts} activeGroup={activeGroup} />

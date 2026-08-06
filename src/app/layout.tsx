@@ -7,6 +7,7 @@ import { AppShell } from "@/components/AppShell";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { listPendingAjustes, listPendingScheduling } from "@/lib/editorial";
 import { isAdminEmail } from "@/lib/admins";
+import { accessLevelOf } from "@/lib/access";
 
 const titillium = Titillium_Web({
   subsets: ["latin"],
@@ -47,6 +48,7 @@ export default async function RootLayout({
   } = await supabase.auth.getUser();
 
   const isAdmin = isAdminEmail(user?.email);
+  const level = accessLevelOf(user);
 
   // Retornos do cliente que precisam de ação (ajustes pedidos + aprovados p/ agendar).
   // Só admins veem o contador de alerta (igual aos popups).
@@ -64,8 +66,8 @@ export default async function RootLayout({
     <html lang="pt-BR" className={`${titillium.variable} ${inter.variable}`}>
       <body className="font-sans">
         <AppShell
-          sidebar={<Sidebar userEmail={user?.email ?? null} pautaAlerts={pautaAlerts} isAdmin={isAdmin} />}
-          topbar={<Topbar userEmail={user?.email ?? null} pautaAlerts={pautaAlerts} isAdmin={isAdmin} />}
+          sidebar={<Sidebar userEmail={user?.email ?? null} pautaAlerts={pautaAlerts} level={level} />}
+          topbar={<Topbar userEmail={user?.email ?? null} pautaAlerts={pautaAlerts} level={level} />}
         >
           {children}
         </AppShell>

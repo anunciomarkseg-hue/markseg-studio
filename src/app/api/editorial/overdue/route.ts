@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { listPendingScheduling } from "@/lib/editorial";
 import { getSupabaseAdmin, supabaseConfigured } from "@/lib/supabase";
-import { isCurrentUserAdmin } from "@/lib/admins";
+import { isCurrentUserAdmin } from "@/lib/admin-guard";
 
 export const dynamic = "force-dynamic";
 
