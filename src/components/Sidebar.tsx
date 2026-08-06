@@ -15,6 +15,7 @@ import {
   Plus,
   LogOut,
   KeyRound,
+  Lock,
   FileBarChart,
   ExternalLink,
   Users,
@@ -27,6 +28,7 @@ type NavItem = {
   label: string;
   icon: ComponentType<{ className?: string; strokeWidth?: number }>;
   adminOnly?: boolean;
+  staff?: boolean; // admin ou editor
 };
 
 const NAV: NavItem[] = [
@@ -36,6 +38,7 @@ const NAV: NavItem[] = [
   { href: "/publicacoes", label: "Publicações", icon: ListChecks },
   { href: "/mural", label: "Mural", icon: StickyNote },
   { href: "/conversas", label: "Conversas", icon: MessageCircle },
+  { href: "/cofre", label: "Cofre", icon: Lock, staff: true },
   { href: "/contas", label: "Contas", icon: AtSign, adminOnly: true },
   { href: "/relatorios", label: "Analytics", icon: BarChart3 },
 ];
@@ -56,7 +59,7 @@ export function Sidebar({
   const pathname = usePathname();
   const isAdmin = level === "admin";
   const podePublicar = canPublish(level);
-  const nav = NAV.filter((n) => !n.adminOnly || isAdmin);
+  const nav = NAV.filter((n) => (!n.adminOnly || isAdmin) && (!n.staff || podePublicar));
 
   const isActive = (href: string) =>
     href === "/" ? pathname === "/" : pathname.startsWith(href);

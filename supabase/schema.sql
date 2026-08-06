@@ -163,3 +163,87 @@ alter table editorial_calendars
 -- evita o post sair 2x quando a legenda é vazia/curta.
 alter table post_targets
   add column if not exists attempted_at timestamptz;
+
+-- ============================================================
+--  COFRE DE ACESSOS (senhas dos clientes + internas da agência)
+--  Rode este bloco no SQL Editor do Supabase.
+--
+--  Regras:
+--   • As SENHAS ficam CRIPTOGRAFADAS (AES-256-GCM) — o app usa a env
+--     VAULT_SECRET pra cifrar/decifrar. O banco só guarda o texto embaralhado.
+--   • RLS ligada; o back-end usa a service role e o navegador NUNCA acessa
+--     o banco direto. Só quem tem nível suficiente revela cada senha.
+--   • Dois mundos: scope 'interno' (agência) e 'cliente' (nunca se misturam).
+--   • 3 níveis de sigilo por pasta:
+--       'dono'   → só os donos (lista ADMIN_EMAILS). Ex.: bancos.
+--       'admin'  → administradores.
+--       'equipe' → admin + editor (quem opera as contas).
+-- ============================================================
+
+-- Pastas do cofre (a unidade de organização + o nível de sigilo)
+create table if not exists vault_folders (
+  id          uuid primary key default gen_random_uuid(),
+  scope       text not null default 'cliente'
+                check (scope in ('interno','cliente')),
+  name        text not null,                 -- "DBP Cleaning" ou "Bancos da agência"
+  sensitivity text not null default 'equipe'
+                check (sensitivity in ('dono','admin','equipe')),
+  notes       text not null default '',      -- observações livres da pasta
+  created_at  timestamptz not null default now(),
+  updated_at  timestamptz not null default now()
+);
+
+create index if not exists idx_vault_folders_scope on vault_folders (scope, name);
+
+-- Acessos (1 linha = 1 senha: Gmail, Meta Ads, WordPress...)
+create table if not exists vault_credentials (
+  id           uuid primary key default gen_random_uuid(),
+  folder_id    uuid not null references vault_folders(id) on delete cascade,
+  category     text not null default 'outros', -- ferramentas|emails|bancos|redes|hospedagem|outros
+  label        text not null,                  -- "Gmail", "Meta Ads"
+  url          text not null default '',       -- link do painel (opcional)
+  username     text not null default '',       -- login/e-mail (NÃO é segredo → texto)
+  password_enc text not null default '',       -- SENHA cifrada (base64) — pode ser vazia
+  extra_enc    text not null default '',       -- 2FA/observação cifrada — pode ser vazia
+  created_at   timestamptz not null default now(),
+  updated_at   timestamptz not null default now()
+);
+
+create index if not exists idx_vault_cred_folder on vault_credentials (folder_id, label);
+
+-- Log de quem revelou qual senha (auditoria — o que a planilha nunca teve).
+-- Guarda um "retrato" do label/pasta pra sobreviver a exclusões.
+create table if not exists vault_access_log (
+  id               uuid primary key default gen_random_uuid(),
+  credential_id    uuid references vault_credentials(id) on delete set null,
+  credential_label text not null default '',
+  folder_name      text not null default '',
+  user_email       text not null default '',
+  action           text not null default 'reveal', -- reveal | copy
+  at               timestamptz not null default now()
+);
+
+create index if not exists idx_vault_log_at on vault_access_log (at desc);
+
+-- "toca" updated_at ao editar pasta/acesso
+create or replace function vault_touch() returns trigger as $$
+begin
+  new.updated_at = now();
+  return new;
+end;
+$$ language plpgsql;
+
+drop trigger if exists trg_vault_folders_touch on vault_folders;
+create trigger trg_vault_folders_touch
+  before update on vault_folders
+  for each row execute function vault_touch();
+
+drop trigger if exists trg_vault_cred_touch on vault_credentials;
+create trigger trg_vault_cred_touch
+  before update on vault_credentials
+  for each row execute function vault_touch();
+
+-- RLS ligada (back-end usa service role e ignora; navegador nunca acessa direto)
+alter table vault_folders     enable row level security;
+alter table vault_credentials enable row level security;
+alter table vault_access_log  enable row level security;
