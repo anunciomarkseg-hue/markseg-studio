@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import {
   Loader2,
@@ -76,6 +76,23 @@ export function CentralClient({ isAdmin }: { isAdmin: boolean }) {
 
   useEffect(() => {
     load();
+  }, [load]);
+
+  // Puxa e-mails novos ao ABRIR o painel (admin) — assim funciona sem depender
+  // do cron. Roda uma vez; o cron continua servindo pra rodar de fundo.
+  const didAutoSync = useRef(false);
+  useEffect(() => {
+    if (isAdmin && !didAutoSync.current) {
+      didAutoSync.current = true;
+      syncNow();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAdmin]);
+
+  // Atualiza a lista sozinho a cada 60s (pega o que o cron/sync trouxe).
+  useEffect(() => {
+    const t = setInterval(() => load(), 60000);
+    return () => clearInterval(t);
   }, [load]);
 
   const openConv = useCallback(async (id: string) => {
