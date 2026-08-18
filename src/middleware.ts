@@ -69,8 +69,12 @@ export async function middleware(request: NextRequest) {
   // ── Controle por NÍVEL de acesso (páginas) ────────────────────────────────
   if (user) {
     const level = accessLevelOf(user);
-    const needsPublish = path.startsWith("/publicar");
-    const needsAdmin = path.startsWith("/contas") || path.startsWith("/equipe");
+    // atender no painel (admin/editor) = canPublish; config de caixas = admin
+    const needsPublish = path.startsWith("/publicar") || path.startsWith("/central");
+    const needsAdmin =
+      path.startsWith("/contas") ||
+      path.startsWith("/equipe") ||
+      path.startsWith("/central/config");
     const needsVault = path.startsWith("/cofre"); // cofre: só admin (canUseVault)
     if (
       (needsPublish && !canPublish(level)) ||

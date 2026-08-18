@@ -19,6 +19,7 @@ import {
   FileBarChart,
   ExternalLink,
   Users,
+  Inbox,
 } from "lucide-react";
 import { canPublish, type AccessLevel } from "@/lib/access";
 import type { ComponentType } from "react";
@@ -28,10 +29,12 @@ type NavItem = {
   label: string;
   icon: ComponentType<{ className?: string; strokeWidth?: number }>;
   adminOnly?: boolean;
+  attendOnly?: boolean;
 };
 
 const NAV: NavItem[] = [
   { href: "/", label: "Visão geral", icon: LayoutDashboard },
+  { href: "/central", label: "Atendimento", icon: Inbox, attendOnly: true },
   { href: "/pauta", label: "Pauta", icon: ClipboardList },
   { href: "/calendario", label: "Calendário", icon: CalendarDays },
   { href: "/publicacoes", label: "Publicações", icon: ListChecks },
@@ -58,7 +61,7 @@ export function Sidebar({
   const pathname = usePathname();
   const isAdmin = level === "admin";
   const podePublicar = canPublish(level);
-  const nav = NAV.filter((n) => !n.adminOnly || isAdmin);
+  const nav = NAV.filter((n) => (!n.adminOnly || isAdmin) && (!n.attendOnly || podePublicar));
 
   const isActive = (href: string) =>
     href === "/" ? pathname === "/" : pathname.startsWith(href);
