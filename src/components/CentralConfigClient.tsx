@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { Loader2, Plus, Trash2, ArrowLeft, CheckCircle2, AlertCircle, Mail } from "lucide-react";
+import { Loader2, Plus, Trash2, ArrowLeft, CheckCircle2, AlertCircle, Mail, RefreshCw } from "lucide-react";
 
 type MailboxSafe = {
   id: string;
@@ -76,6 +76,29 @@ export function CentralConfigClient() {
       setBanner({ kind: "err", text: (err as Error).message });
     } finally {
       setSaving(false);
+    }
+  }
+
+  const [syncingId, setSyncingId] = useState<string | null>(null);
+  async function syncBox(id: string) {
+    setSyncingId(id);
+    setBanner(null);
+    try {
+      const res = await fetch("/api/central/sync", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mailboxId: id }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error ?? "Falha ao sincronizar.");
+      const err = data.results?.[0]?.error as string | undefined;
+      if (err) throw new Error(err);
+      setBanner({ kind: "ok", text: `Sincronizado — ${data.novos ?? 0} e-mail(s). Veja no painel.` });
+      load();
+    } catch (e) {
+      setBanner({ kind: "err", text: (e as Error).message });
+    } finally {
+      setSyncingId(null);
     }
   }
 
@@ -173,13 +196,28 @@ export function CentralConfigClient() {
                     </p>
                   )}
                 </div>
-                <button
-                  onClick={() => removeBox(b.id, b.email)}
-                  className="inline-grid h-8 w-8 shrink-0 place-items-center rounded-lg text-slate-400 transition-fluid hover:bg-rose-50 hover:text-rose-600"
-                  title="Remover caixa"
-                >
-                  <Trash2 className="h-4 w-4" />
-                </button>
+                <div className="flex shrink-0 items-center gap-1">
+                  <button
+                    onClick={() => syncBox(b.id)}
+                    disabled={syncingId === b.id}
+                    className="flex items-center gap-1.5 rounded-lg border border-brand-blue bg-brand-blue-50 px-2.5 py-1.5 text-xs font-semibold text-brand-blue-700 transition-fluid hover:brightness-95 disabled:opacity-50"
+                    title="Puxar e-mails agora"
+                  >
+                    {syncingId === b.id ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <RefreshCw className="h-3.5 w-3.5" />
+                    )}
+                    Sincronizar
+                  </button>
+                  <button
+                    onClick={() => removeBox(b.id, b.email)}
+                    className="inline-grid h-8 w-8 place-items-center rounded-lg text-slate-400 transition-fluid hover:bg-rose-50 hover:text-rose-600"
+                    title="Remover caixa"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                </div>
               </div>
             ))}
           </div>

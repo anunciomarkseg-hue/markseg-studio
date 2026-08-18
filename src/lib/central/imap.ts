@@ -18,11 +18,14 @@ export async function fetchMailbox(
   opts: { maxMessages?: number } = {},
 ): Promise<{ fetched: number; error?: string }> {
   const max = opts.maxMessages ?? 40;
+  // Gmail mostra a senha de app com espaços ("abcd efgh ijkl mnop") — se colar
+  // assim, o login falha. Tiramos os espaços no Gmail pra evitar essa pegadinha.
+  const pass = /gmail|googlemail/i.test(m.imap_host) ? m.imap_pass.replace(/\s+/g, "") : m.imap_pass;
   const client = new ImapFlow({
     host: m.imap_host,
     port: m.imap_port,
     secure: m.imap_tls,
-    auth: { user: m.imap_user, pass: m.imap_pass },
+    auth: { user: m.imap_user, pass },
     logger: false,
   });
 
@@ -64,7 +67,14 @@ export async function fetchMailbox(
       lock.release();
     }
   } catch (e) {
-    const error = (e as Error).message;
+    const err = e as { message?: string; responseText?: string; response?: string; authenticationFailed?: boolean };
+    let error = err.responseText || err.response || err.message || "Erro desconhecido";
+    if (err.authenticationFailed || /AUTHENTICATIONFAILED|Invalid credentials|Username and Password not accepted|LOGIN failed/i.test(error)) {
+      error =
+        "Login recusado. Use uma SENHA DE APP (a senha normal do Gmail não funciona) e confirme que o IMAP está habilitado nas configs do e-mail.";
+    } else if (/ENOTFOUND|EAI_AGAIN|ECONNREFUSED|ETIMEDOUT/i.test(error)) {
+      error = "Não consegui conectar no servidor IMAP. Confira o endereço e a porta.";
+    }
     await updateMailboxSync(m.id, { last_error: error, last_synced_at: new Date().toISOString() });
     return { fetched, error };
   } finally {
