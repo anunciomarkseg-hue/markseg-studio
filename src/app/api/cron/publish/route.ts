@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { getSupabaseAdmin, supabaseConfigured } from "@/lib/supabase";
 import { publishPost } from "@/lib/publish";
+import { listMailboxes } from "@/lib/central/db";
+import { fetchMailbox } from "@/lib/central/imap";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -49,7 +51,24 @@ async function run(req: Request) {
     }
   }
 
-  return NextResponse.json({ ok: true, ran: results.length, results });
+  // De carona no MESMO cron: puxa e-mails novos da Central (sem precisar de
+  // outro agendador). Nunca atrapalha a publicação — roda só com o tempo que
+  // sobrar e qualquer erro é ignorado.
+  const emails: { mailbox: string; fetched: number; error?: string }[] = [];
+  try {
+    if (Date.now() - started < 45000) {
+      const boxes = await listMailboxes(true);
+      for (const box of boxes) {
+        if (Date.now() - started > 55000) break;
+        const r = await fetchMailbox(box, { maxMessages: 30 });
+        emails.push({ mailbox: box.email, fetched: r.fetched, error: r.error });
+      }
+    }
+  } catch {
+    /* e-mail nunca derruba a publicação */
+  }
+
+  return NextResponse.json({ ok: true, ran: results.length, results, emails });
 }
 
 export async function GET(req: Request) {
