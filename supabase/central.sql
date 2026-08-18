@@ -82,3 +82,13 @@ create unique index if not exists idx_central_msg_msgid
 
 create index if not exists idx_central_msg_conv
   on central_messages (conversation_id, sent_at);
+
+-- ------------------------------------------------------------
+-- RLS: liga o Row Level Security e NÃO cria políticas de propósito.
+-- Assim as chaves públicas (anon/authenticated) ficam bloqueadas e só o
+-- servidor (service role, que ignora o RLS) acessa estas tabelas — importante
+-- porque central_mailboxes guarda as senhas dos e-mails.
+-- ------------------------------------------------------------
+alter table central_mailboxes     enable row level security;
+alter table central_conversations enable row level security;
+alter table central_messages      enable row level security;
