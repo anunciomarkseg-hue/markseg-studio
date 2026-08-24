@@ -11,15 +11,14 @@ export async function listAccounts(): Promise<SocialAccount[]> {
   const base = "id, platform, handle, name, followers, avatar, group_key";
   // tenta com as colunas de saúde do token; se ainda não existem (SQL não rodado),
   // cai no básico — nada quebra.
-  let res = await sb
+  const full = await sb
     .from("social_accounts")
     .select(`${base}, needs_reconnect, token_error`)
     .order("created_at", { ascending: true });
-  if (res.error) {
-    res = await sb.from("social_accounts").select(base).order("created_at", { ascending: true });
-  }
-  if (res.error) throw new Error(res.error.message);
-  return (res.data ?? []) as SocialAccount[];
+  if (!full.error) return (full.data ?? []) as unknown as SocialAccount[];
+  const basic = await sb.from("social_accounts").select(base).order("created_at", { ascending: true });
+  if (basic.error) throw new Error(basic.error.message);
+  return (basic.data ?? []) as unknown as SocialAccount[];
 }
 
 export async function listPosts(): Promise<ScheduledPost[]> {
