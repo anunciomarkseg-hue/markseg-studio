@@ -8,12 +8,18 @@ import type { MediaType, PostStatus, ScheduledPost, SocialAccount } from "./type
 
 export async function listAccounts(): Promise<SocialAccount[]> {
   const sb = getSupabaseAdmin();
-  const { data, error } = await sb
+  const base = "id, platform, handle, name, followers, avatar, group_key";
+  // tenta com as colunas de saúde do token; se ainda não existem (SQL não rodado),
+  // cai no básico — nada quebra.
+  let res = await sb
     .from("social_accounts")
-    .select("id, platform, handle, name, followers, avatar, group_key, needs_reconnect, token_error")
+    .select(`${base}, needs_reconnect, token_error`)
     .order("created_at", { ascending: true });
-  if (error) throw new Error(error.message);
-  return (data ?? []) as SocialAccount[];
+  if (res.error) {
+    res = await sb.from("social_accounts").select(base).order("created_at", { ascending: true });
+  }
+  if (res.error) throw new Error(res.error.message);
+  return (res.data ?? []) as SocialAccount[];
 }
 
 export async function listPosts(): Promise<ScheduledPost[]> {
@@ -160,13 +166,15 @@ export async function upsertAccount(acc: UpsertAccountInput): Promise<void> {
     .eq("external_id", acc.external_id)
     .maybeSingle();
 
-  // reconectar zera o alerta de token expirado
-  const payload = { ...acc, needs_reconnect: false, token_error: null };
+  // reconectar zera o alerta de token expirado (se as colunas existirem)
+  const withHealth = { ...acc, needs_reconnect: false, token_error: null };
   if (existing) {
-    const { error } = await sb.from("social_accounts").update(payload).eq("id", existing.id);
+    let { error } = await sb.from("social_accounts").update(withHealth).eq("id", existing.id);
+    if (error) ({ error } = await sb.from("social_accounts").update(acc).eq("id", existing.id));
     if (error) throw new Error(error.message);
   } else {
-    const { error } = await sb.from("social_accounts").insert(payload);
+    let { error } = await sb.from("social_accounts").insert(withHealth);
+    if (error) ({ error } = await sb.from("social_accounts").insert(acc));
     if (error) throw new Error(error.message);
   }
 }
