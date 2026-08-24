@@ -19,6 +19,10 @@ export interface SocialAccount {
   avatar: string;
   /** chave do "cliente": IG e FB do mesmo cliente compartilham (= id da Página). */
   group_key?: string | null;
+  /** true quando o token da Meta caducou e a conta precisa ser reconectada. */
+  needs_reconnect?: boolean;
+  /** última mensagem de erro de token (pra mostrar o motivo). */
+  token_error?: string | null;
 }
 
 export interface ScheduledPost {

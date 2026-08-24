@@ -19,7 +19,7 @@ export function PublicacoesClient({
 }) {
   const router = useRouter();
   const [filter, setFilter] = useState<Filter>("todas");
-  const [busy, setBusy] = useState<{ id: string; action: "publish" | "delete" } | null>(null);
+  const [busy, setBusy] = useState<{ id: string; action: "publish" | "delete" | "republish" } | null>(null);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
   const list = posts
@@ -47,6 +47,33 @@ export function PublicacoesClient({
       } else {
         const firstErr = data.details?.find((d: { error?: string }) => d.error)?.error ?? "falhou";
         setMsg({ ok: false, text: `Não publicou: ${firstErr}` });
+      }
+      router.refresh();
+    } catch (e) {
+      setMsg({ ok: false, text: (e as Error).message });
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function republish(id: string) {
+    if (
+      !window.confirm(
+        "REPUBLICAR este post?\n\nReenvia só o que NÃO saiu (o que já foi publicado não duplica). Confirmar?",
+      )
+    )
+      return;
+    setMsg(null);
+    setBusy({ id, action: "republish" });
+    try {
+      const res = await fetch(`/api/posts/${id}/republish`, { method: "POST" });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error ?? "Falha ao republicar");
+      if (data.published > 0) {
+        setMsg({ ok: true, text: `Republicado em ${data.published} conta(s)! 🎉${data.failed ? ` (${data.failed} falharam)` : ""}` });
+      } else {
+        const firstErr = data.details?.find((d: { error?: string }) => d.error)?.error ?? "não saiu";
+        setMsg({ ok: false, text: `Ainda não publicou: ${firstErr}` });
       }
       router.refresh();
     } catch (e) {
@@ -151,6 +178,21 @@ export function PublicacoesClient({
                         <Send className="h-3.5 w-3.5" />
                       )}
                       Publicar agora
+                    </button>
+                  )}
+                  {(p.status === "publicado" || p.status === "falhou") && (
+                    <button
+                      onClick={() => republish(p.id)}
+                      disabled={isBusy}
+                      title="Reenvia só o que não saiu (não duplica)"
+                      className="flex items-center gap-1.5 rounded-lg border border-brand-blue px-3 py-1.5 text-xs font-semibold text-brand-blue-700 transition-fluid hover:bg-brand-blue-50 disabled:opacity-50"
+                    >
+                      {isBusy && busy?.action === "republish" ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <Send className="h-3.5 w-3.5" />
+                      )}
+                      Republicar
                     </button>
                   )}
                   <button

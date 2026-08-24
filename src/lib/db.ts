@@ -10,7 +10,7 @@ export async function listAccounts(): Promise<SocialAccount[]> {
   const sb = getSupabaseAdmin();
   const { data, error } = await sb
     .from("social_accounts")
-    .select("id, platform, handle, name, followers, avatar, group_key")
+    .select("id, platform, handle, name, followers, avatar, group_key, needs_reconnect, token_error")
     .order("created_at", { ascending: true });
   if (error) throw new Error(error.message);
   return (data ?? []) as SocialAccount[];
@@ -160,11 +160,13 @@ export async function upsertAccount(acc: UpsertAccountInput): Promise<void> {
     .eq("external_id", acc.external_id)
     .maybeSingle();
 
+  // reconectar zera o alerta de token expirado
+  const payload = { ...acc, needs_reconnect: false, token_error: null };
   if (existing) {
-    const { error } = await sb.from("social_accounts").update(acc).eq("id", existing.id);
+    const { error } = await sb.from("social_accounts").update(payload).eq("id", existing.id);
     if (error) throw new Error(error.message);
   } else {
-    const { error } = await sb.from("social_accounts").insert(acc);
+    const { error } = await sb.from("social_accounts").insert(payload);
     if (error) throw new Error(error.message);
   }
 }

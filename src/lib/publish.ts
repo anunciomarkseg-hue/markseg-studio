@@ -60,6 +60,13 @@ async function findSiblingPublished(
   return hit?.external_post_id ?? null;
 }
 
+/** Erro que indica token da Meta expirado/invalidado (precisa reconectar). */
+function isTokenError(msg: string): boolean {
+  return /error validating access token|oauthexception|session has been invalidated|access token.*(expired|invalid)|code 190|malformed access token/i.test(
+    msg,
+  );
+}
+
 export interface PublishResult {
   published: number;
   failed: number;
@@ -333,11 +340,25 @@ export async function publishPost(postId: string): Promise<PublishResult> {
           ig_container_id: null,
         })
         .eq("id", t.id);
+      // deu certo → limpa qualquer alerta de token expirado da conta
+      if (acc.platform === "instagram" || acc.platform === "facebook") {
+        await sb
+          .from("social_accounts")
+          .update({ needs_reconnect: false, token_error: null })
+          .eq("id", acc.id);
+      }
       published++;
       details.push({ accountId: t.account_id, ok: true, externalId });
     } catch (e) {
       const msg = (e as Error).message;
       await sb.from("post_targets").update({ status: "falhou", error_message: msg }).eq("id", t.id);
+      // token da Meta caducou → marca a conta pra reconectar (aviso proativo)
+      if (isTokenError(msg)) {
+        await sb
+          .from("social_accounts")
+          .update({ needs_reconnect: true, token_error: msg.slice(0, 300) })
+          .eq("id", t.account_id);
+      }
       failed++;
       details.push({ accountId: t.account_id, ok: false, error: msg });
     }

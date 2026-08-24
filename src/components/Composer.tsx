@@ -161,6 +161,8 @@ export function Composer({
     ? buildClients(accounts).filter((c) => selKeys.has(c.key))
     : [];
   const multiClient = selectedClients.length > 1;
+  // contas selecionadas com token expirado (precisam reconectar antes de postar)
+  const reconnectAccounts = selectedAccounts.filter((a) => a.needs_reconnect);
 
   // Mantém "Publicar em" em SINCRONIA com o seletor de cliente do topo. Sem isto,
   // trocar o cliente lá em cima NÃO mexia nas contas daqui — e dava pra publicar
@@ -555,6 +557,19 @@ export function Composer({
                       {selectedAccounts.length} conta(s)
                     </p>
                   ))}
+
+                {reconnectAccounts.length > 0 && (
+                  <div className="mt-3 flex items-start gap-2 rounded-xl border border-rose-300 bg-rose-50 p-3 text-rose-700">
+                    <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+                    <p className="text-xs font-medium">
+                      Token expirado em: {reconnectAccounts.map((a) => a.handle).join(", ")}. Essas
+                      contas <b>não vão publicar</b> até serem reconectadas.{" "}
+                      <Link href="/contas" className="font-bold underline">
+                        Reconectar agora →
+                      </Link>
+                    </p>
+                  </div>
+                )}
               </>
             )}
           </section>
