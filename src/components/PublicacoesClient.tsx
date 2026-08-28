@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { Plus, Send, Trash2, Loader2, CheckCircle2, AlertCircle } from "lucide-react";
 import { STATUS_LABEL, type PostStatus, type ScheduledPost, type SocialAccount } from "@/lib/types";
 import { PostListItem } from "@/components/PostListItem";
+import { acompanharPost } from "@/lib/postStatus";
 
 type Filter = "todas" | PostStatus;
 const FILTERS: Filter[] = ["todas", "agendado", "aguardando", "publicado", "rascunho", "falhou"];
@@ -29,24 +30,53 @@ export function PublicacoesClient({
   const count = (f: Filter) =>
     f === "todas" ? posts.length : posts.filter((p) => p.status === f).length;
 
-  async function publishNow(id: string) {
-    if (
-      !window.confirm(
-        "PUBLICAR AGORA, AO VIVO?\n\nIsso posta DE VERDADE na(s) conta(s) selecionada(s) — fica visível pros seguidores. Confirmar?",
-      )
-    )
-      return;
+  /** Envia e, se a resposta se perder (corte por tempo), confere o estado REAL
+   *  do post em vez de dizer que falhou — o post costuma ter saído. */
+  async function enviar(id: string, rota: "publish" | "republish", verbo: string) {
     setMsg(null);
-    setBusy({ id, action: "publish" });
+    setBusy({ id, action: rota === "publish" ? "publish" : "republish" });
     try {
-      const res = await fetch(`/api/posts/${id}/publish`, { method: "POST" });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "Falha ao publicar");
-      if (data.published > 0) {
-        setMsg({ ok: true, text: `Publicado em ${data.published} conta(s)! 🎉${data.failed ? ` (${data.failed} falharam)` : ""}` });
+      let data: Record<string, unknown> = {};
+      let cortado = false;
+      try {
+        const res = await fetch(`/api/posts/${id}/${rota}`, { method: "POST" });
+        const text = await res.text();
+        try {
+          data = text ? JSON.parse(text) : {};
+        } catch {
+          cortado = true; // resposta não-JSON = função cortada por tempo
+        }
+        if (!res.ok && !cortado) throw new Error((data.error as string) ?? `Falha ao ${verbo}`);
+      } catch (e) {
+        if (!cortado) {
+          if (e instanceof TypeError) cortado = true; // rede caiu no meio
+          else throw e;
+        }
+      }
+
+      if (cortado) {
+        setMsg({ ok: true, text: "Finalizando a publicação… conferindo o resultado." });
+        const info = await acompanharPost(id);
+        if (info && (info.publicados ?? 0) > 0) {
+          setMsg({ ok: true, text: `Publicado em ${info.publicados} conta(s)! 🎉${info.falhou ? ` (${info.falhou} falharam)` : ""}` });
+        } else if (info?.falhou) {
+          setMsg({ ok: false, text: `Não publicou: ${info.primeiroErro ?? "falhou"}` });
+        } else {
+          setMsg({
+            ok: true,
+            text: "O vídeo ainda está sendo finalizado pelo Instagram (normal). Não publique de novo — atualize em alguns minutos.",
+          });
+        }
+        router.refresh();
+        return;
+      }
+
+      const publicados = Number(data.published ?? 0);
+      if (publicados > 0) {
+        setMsg({ ok: true, text: `Publicado em ${publicados} conta(s)! 🎉${data.failed ? ` (${data.failed} falharam)` : ""}` });
       } else {
-        const firstErr = data.details?.find((d: { error?: string }) => d.error)?.error ?? "falhou";
-        setMsg({ ok: false, text: `Não publicou: ${firstErr}` });
+        const det = data.details as { error?: string }[] | undefined;
+        setMsg({ ok: false, text: `Não publicou: ${det?.find((d) => d.error)?.error ?? "falhou"}` });
       }
       router.refresh();
     } catch (e) {
@@ -56,6 +86,16 @@ export function PublicacoesClient({
     }
   }
 
+  async function publishNow(id: string) {
+    if (
+      !window.confirm(
+        "PUBLICAR AGORA, AO VIVO?\n\nIsso posta DE VERDADE na(s) conta(s) selecionada(s) — fica visível pros seguidores. Confirmar?",
+      )
+    )
+      return;
+    await enviar(id, "publish", "publicar");
+  }
+
   async function republish(id: string) {
     if (
       !window.confirm(
@@ -63,24 +103,7 @@ export function PublicacoesClient({
       )
     )
       return;
-    setMsg(null);
-    setBusy({ id, action: "republish" });
-    try {
-      const res = await fetch(`/api/posts/${id}/republish`, { method: "POST" });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.error ?? "Falha ao republicar");
-      if (data.published > 0) {
-        setMsg({ ok: true, text: `Republicado em ${data.published} conta(s)! 🎉${data.failed ? ` (${data.failed} falharam)` : ""}` });
-      } else {
-        const firstErr = data.details?.find((d: { error?: string }) => d.error)?.error ?? "não saiu";
-        setMsg({ ok: false, text: `Ainda não publicou: ${firstErr}` });
-      }
-      router.refresh();
-    } catch (e) {
-      setMsg({ ok: false, text: (e as Error).message });
-    } finally {
-      setBusy(null);
-    }
+    await enviar(id, "republish", "republicar");
   }
 
   async function del(id: string, isPublished: boolean) {

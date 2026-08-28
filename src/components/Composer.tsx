@@ -30,6 +30,7 @@ import { ReelCoverPicker } from "@/components/ReelCoverPicker";
 import { accountIdsForGroup, buildClients, groupKeyOf } from "@/lib/clients";
 import { uploadMediaDirect } from "@/lib/supabase-browser";
 import { suggestCaption } from "@/lib/caption";
+import { acompanharPost } from "@/lib/postStatus";
 
 const MEDIA_TYPES: MediaType[] = ["imagem", "carrossel", "video", "reel", "story"];
 const FALLBACK_MEDIA = "gradient-brand";
@@ -43,6 +44,8 @@ const PLATFORM_LABEL: Record<Platform, string> = {
 
 type ApiResult = {
   error?: string;
+  /** true quando o servidor foi cortado por tempo — a publicação pode ter saído. */
+  cortado?: boolean;
   id?: string;
   ok?: boolean;
   published?: number;
@@ -53,22 +56,21 @@ type ApiResult = {
   details?: { error?: string }[];
 };
 
-/** Lê a resposta com segurança. Se o servidor devolver um erro que NÃO é JSON
- *  (timeout/crash de plataforma — ex.: função cortada por tempo no vídeo/Reel),
- *  vira uma mensagem legível em vez de quebrar a tela com "... is not valid JSON". */
+/** Lê a resposta com segurança. Se o servidor devolver algo que NÃO é JSON
+ *  (função cortada por tempo no vídeo/Reel), marca `cortado` — quem chamou
+ *  consulta o estado REAL do post em vez de dizer que falhou. */
 async function parseResponse(res: Response): Promise<ApiResult> {
   const text = await res.text();
   try {
     return text ? (JSON.parse(text) as ApiResult) : {};
   } catch {
-    const timeout = /timeout|timed out|invocation_timeout|an error occ|gateway|504/i.test(text);
     return {
-      error: timeout
-        ? "A publicação demorou demais e o servidor cortou (comum em Reel/vídeo). Ele pode ainda estar processando — espere alguns segundos e clique em Publicar de novo."
-        : `O servidor respondeu de forma inesperada (código ${res.status}). Tente de novo em instantes.`,
+      cortado: true,
+      error: `O servidor respondeu de forma inesperada (código ${res.status}).`,
     };
   }
 }
+
 
 function defaultDate() {
   const d = new Date();
@@ -95,6 +97,8 @@ export function Composer({
   const [date, setDate] = useState(defaultDate());
   const [time, setTime] = useState("10:00");
   const [saving, setSaving] = useState<null | PostStatus>(null);
+  /** aviso calmo enquanto confirmamos o estado real de uma publicação demorada */
+  const [aguardando, setAguardando] = useState<string | null>(null);
   const [done, setDone] = useState<null | { label: string; status: PostStatus }>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -459,9 +463,49 @@ export function Composer({
       if (!res.ok) throw new Error(data.error ?? `Erro ao criar o post (código ${res.status})`);
       markPautaScheduled(data.id ?? "");
 
-      const pubRes = await fetch(`/api/posts/${data.id}/publish`, { method: "POST" });
-      const pub = await parseResponse(pubRes);
-      if (!pubRes.ok) throw new Error(pub.error ?? "Erro ao publicar");
+      const postId = data.id ?? "";
+      let pub: ApiResult;
+      try {
+        const pubRes = await fetch(`/api/posts/${postId}/publish`, { method: "POST" });
+        pub = await parseResponse(pubRes);
+        if (!pubRes.ok && !pub.cortado) throw new Error(pub.error ?? "Erro ao publicar");
+      } catch (e) {
+        // conexão caiu no meio — trata como corte e vai conferir o estado real
+        if (!postId) throw e;
+        pub = { cortado: true };
+      }
+
+      // Resposta perdida (corte por tempo). NÃO diz que falhou: consulta o que
+      // realmente aconteceu — na maioria das vezes o post saiu normalmente.
+      if (pub.cortado && postId) {
+        setAguardando("Finalizando a publicação… (o vídeo pode levar alguns segundos)");
+        const info = await acompanharPost(postId, (i) => {
+          if (i.processando) {
+            setAguardando(
+              `Finalizando… ${i.publicados ?? 0}/${i.total ?? 0} conta(s) concluída(s).`,
+            );
+          }
+        });
+        setAguardando(null);
+        if (info && (info.publicados ?? 0) > 0) {
+          setDone({
+            status: "publicado",
+            label: `${info.publicados} conta(s)${info.falhou ? ` · ${info.falhou} falhou(aram)` : ""}`,
+          });
+          resetComposer();
+          router.refresh();
+          return;
+        }
+        if (info && info.falhou) {
+          setError(`Não publicou: ${info.primeiroErro ?? "falhou"}`);
+          router.refresh();
+          return;
+        }
+        // ainda processando depois da espera — informa sem assustar
+        setDone({ status: "aguardando", label: "" });
+        router.refresh();
+        return;
+      }
 
       if ((pub.published ?? 0) > 0) {
         setDone({
@@ -478,6 +522,7 @@ export function Composer({
       setError((e as Error).message);
     } finally {
       setPublishing(false);
+      setAguardando(null);
     }
   }
 
@@ -503,6 +548,12 @@ export function Composer({
               <>
                 Publicado ao vivo em <span className="font-bold">{done.label}</span>! 🎉
               </>
+            ) : done.status === "aguardando" ? (
+              <>
+                O vídeo <b>ainda está sendo finalizado</b> pelo Instagram — isso é normal e leva
+                alguns minutos. <b>Não publique de novo</b>: assim que terminar, ele aparece
+                publicado.
+              </>
             ) : (
               <>
                 Publicação <b>agendada</b> e salva para{" "}
@@ -513,6 +564,13 @@ export function Composer({
               Ver em Publicações →
             </Link>
           </p>
+        </div>
+      )}
+
+      {aguardando && (
+        <div className="mb-6 flex items-center gap-3 rounded-2xl border border-brand-blue/30 bg-brand-blue-50 p-4 text-brand-blue-700 animate-rise">
+          <Loader2 className="h-5 w-5 shrink-0 animate-spin" />
+          <p className="text-sm font-medium">{aguardando}</p>
         </div>
       )}
 
