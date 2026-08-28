@@ -17,6 +17,12 @@ import { getSupabaseAdmin } from "./supabase";
 
 const TT_CLIENT_KEY = process.env.TIKTOK_CLIENT_KEY ?? "";
 const TT_CLIENT_SECRET = process.env.TIKTOK_CLIENT_SECRET ?? "";
+
+/** fetch com prazo máximo — evita que uma resposta lenta do TikTok pendure a
+ *  função até o corte da plataforma. */
+function fetchT(url: string, init: RequestInit = {}, ms = 25000): Promise<Response> {
+  return fetch(url, { ...init, signal: AbortSignal.timeout(ms) });
+}
 /** SELF_ONLY até a auditoria passar. Depois troque pra PUBLIC_TO_EVERYONE no .env. */
 const TT_PRIVACY = process.env.TIKTOK_DEFAULT_PRIVACY ?? "SELF_ONLY";
 
@@ -47,7 +53,7 @@ interface TikTokTokens {
 }
 
 async function tokenRequest(body: Record<string, string>): Promise<TikTokTokens> {
-  const res = await fetch(`${API}/oauth/token/`, {
+  const res = await fetchT(`${API}/oauth/token/`, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({
@@ -90,7 +96,7 @@ export interface TikTokCreator {
 
 /** Nome do criador conectado (pra exibir em "Contas"). Só usa user.info.basic. */
 export async function getTikTokCreator(token: string): Promise<TikTokCreator> {
-  const res = await fetch(`${API}/user/info/?fields=open_id,display_name,avatar_url`, {
+  const res = await fetchT(`${API}/user/info/?fields=open_id,display_name,avatar_url`, {
     headers: { Authorization: `Bearer ${token}` },
   });
   const json = (await res.json()) as {
@@ -144,12 +150,12 @@ export async function publishToTikTokVideo(
   opts: { videoUrl: string; caption: string },
 ): Promise<string> {
   // 1) baixa o vídeo do nosso Storage
-  const bytes = new Uint8Array(await (await fetch(opts.videoUrl)).arrayBuffer());
+  const bytes = new Uint8Array(await (await fetchT(opts.videoUrl, {}, 45000)).arrayBuffer());
   const size = bytes.byteLength;
   if (size === 0) throw new Error("Vídeo vazio ou inacessível pro TikTok.");
 
   // 2) inicializa o post (Direct Post)
-  const initRes = await fetch(`${API}/post/publish/video/init/`, {
+  const initRes = await fetchT(`${API}/post/publish/video/init/`, {
     method: "POST",
     headers: jsonHeaders(token),
     body: JSON.stringify({
@@ -180,7 +186,7 @@ export async function publishToTikTokVideo(
   }
 
   // 3) envia os bytes do vídeo
-  const up = await fetch(init.data.upload_url, {
+  const up = await fetchT(init.data.upload_url, {
     method: "PUT",
     headers: {
       "Content-Type": "video/mp4",
@@ -188,7 +194,7 @@ export async function publishToTikTokVideo(
       "Content-Range": `bytes 0-${size - 1}/${size}`,
     },
     body: bytes,
-  });
+  }, 45000); // enviar os bytes do vídeo demora mais que uma chamada normal
   if (!up.ok) throw new Error(`Falha ao enviar o vídeo pro TikTok (HTTP ${up.status}).`);
 
   // 4) acompanha o status até concluir
@@ -196,7 +202,7 @@ export async function publishToTikTokVideo(
   const start = Date.now();
   while (Date.now() - start < 90000) {
     await new Promise((r) => setTimeout(r, 4000));
-    const stRes = await fetch(`${API}/post/publish/status/fetch/`, {
+    const stRes = await fetchT(`${API}/post/publish/status/fetch/`, {
       method: "POST",
       headers: jsonHeaders(token),
       body: JSON.stringify({ publish_id: publishId }),

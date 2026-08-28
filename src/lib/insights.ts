@@ -8,7 +8,9 @@
 const GRAPH = `https://graph.facebook.com/${process.env.META_GRAPH_VERSION ?? "v21.0"}`;
 
 async function gget<T>(url: string): Promise<T> {
-  const res = await fetch(url);
+  // Timeout obrigatório: sem ele, uma resposta lenta da Meta pendura a tela de
+  // relatórios inteira até a plataforma cortar a função.
+  const res = await fetch(url, { signal: AbortSignal.timeout(20000) });
   const json = (await res.json()) as T & { error?: { message?: string } };
   if ((json as { error?: { message?: string } }).error) {
     throw new Error((json as { error?: { message?: string } }).error?.message ?? "Erro na API de Insights");

@@ -288,7 +288,7 @@ export async function publishToFacebookPage(
 export async function deleteFacebookPost(externalPostId: string, pageToken: string): Promise<void> {
   const res = await fetch(
     `https://graph.facebook.com/${GRAPH_VERSION}/${externalPostId}?access_token=${encodeURIComponent(pageToken)}`,
-    { method: "DELETE" },
+    { method: "DELETE", signal: AbortSignal.timeout(25000) },
   );
   const json = (await res.json().catch(() => ({}))) as {
     success?: boolean;
@@ -641,6 +641,7 @@ export async function publishStoryToFacebookPage(
   const startRes = await fetch(`${GRAPH}/${pageId}/video_stories`, {
     method: "POST",
     body: new URLSearchParams({ upload_phase: "start", access_token: pageToken }),
+    signal: AbortSignal.timeout(25000),
   });
   const start = (await startRes.json()) as {
     video_id?: string;
@@ -654,6 +655,8 @@ export async function publishStoryToFacebookPage(
   const upRes = await fetch(start.upload_url, {
     method: "POST",
     headers: { Authorization: `OAuth ${pageToken}`, file_url: opts.mediaUrl },
+    // envio de vídeo demora mais que uma chamada normal, mas não pode ser infinito
+    signal: AbortSignal.timeout(45000),
   });
   if (!upRes.ok) throw new Error(`Falha ao enviar o vídeo do Story pro Facebook (HTTP ${upRes.status})`);
 
@@ -664,6 +667,7 @@ export async function publishStoryToFacebookPage(
       video_id: start.video_id,
       access_token: pageToken,
     }),
+    signal: AbortSignal.timeout(25000),
   });
   const fin = (await finRes.json()) as {
     success?: boolean;

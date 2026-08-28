@@ -10,6 +10,12 @@ const LI_VERSION = process.env.LINKEDIN_API_VERSION ?? "202405";
 
 export const linkedinConfigured = Boolean(LI_CLIENT_ID && LI_CLIENT_SECRET);
 
+/** fetch com prazo máximo — sem isto, uma resposta lenta do LinkedIn pendura a
+ *  função até a plataforma cortá-la (o usuário vê a tela "travada"). */
+function fetchT(url: string, init: RequestInit = {}, ms = 25000): Promise<Response> {
+  return fetch(url, { ...init, signal: AbortSignal.timeout(ms) });
+}
+
 /** Postar em Página de empresa precisa destes scopes (Community Management API). */
 export const LINKEDIN_SCOPES = "r_organization_admin w_organization_social";
 
@@ -25,7 +31,7 @@ export function getLinkedInLoginUrl(redirectUri: string, state: string): string 
 }
 
 export async function exchangeLinkedInCode(code: string, redirectUri: string): Promise<string> {
-  const res = await fetch("https://www.linkedin.com/oauth/v2/accessToken", {
+  const res = await fetchT("https://www.linkedin.com/oauth/v2/accessToken", {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({
@@ -55,7 +61,7 @@ const liHeaders = (token: string) => ({
 
 /** Lista as Páginas de empresa que o usuário administra. */
 export async function getLinkedInOrganizations(token: string): Promise<LinkedInOrg[]> {
-  const aclRes = await fetch(
+  const aclRes = await fetchT(
     "https://api.linkedin.com/v2/organizationAcls?q=roleAssignee&role=ADMINISTRATOR&state=APPROVED",
     { headers: liHeaders(token) },
   );
@@ -72,7 +78,7 @@ export async function getLinkedInOrganizations(token: string): Promise<LinkedInO
   for (const urn of urns) {
     const id = urn.split(":").pop() as string;
     try {
-      const oRes = await fetch(
+      const oRes = await fetchT(
         `https://api.linkedin.com/v2/organizations/${id}?projection=(id,localizedName,vanityName)`,
         { headers: liHeaders(token) },
       );
@@ -86,7 +92,7 @@ export async function getLinkedInOrganizations(token: string): Promise<LinkedInO
 }
 
 async function liPost(path: string, token: string, body: unknown): Promise<Response> {
-  return fetch(`https://api.linkedin.com${path}`, {
+  return fetchT(`https://api.linkedin.com${path}`, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${token}`,
@@ -107,8 +113,8 @@ async function uploadLinkedInImage(orgId: string, token: string, imageUrl: strin
   const imageUrn = init.value?.image;
   if (!uploadUrl || !imageUrn) throw new Error("Falha ao iniciar o upload da imagem no LinkedIn");
 
-  const bytes = new Uint8Array(await (await fetch(imageUrl)).arrayBuffer());
-  const up = await fetch(uploadUrl, {
+  const bytes = new Uint8Array(await (await fetch(imageUrl, { signal: AbortSignal.timeout(30000) })).arrayBuffer());
+  const up = await fetchT(uploadUrl, {
     method: "PUT",
     headers: { Authorization: `Bearer ${token}` },
     body: bytes,
@@ -145,7 +151,7 @@ export async function publishToLinkedIn(
 
 /** Apaga um post do LinkedIn (URN retornado na publicação). */
 export async function deleteLinkedInPost(postUrn: string, token: string): Promise<void> {
-  const res = await fetch(`https://api.linkedin.com/rest/posts/${encodeURIComponent(postUrn)}`, {
+  const res = await fetchT(`https://api.linkedin.com/rest/posts/${encodeURIComponent(postUrn)}`, {
     method: "DELETE",
     headers: {
       Authorization: `Bearer ${token}`,
