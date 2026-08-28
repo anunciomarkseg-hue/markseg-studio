@@ -5,7 +5,7 @@ import { Sidebar } from "@/components/Sidebar";
 import { Topbar } from "@/components/Topbar";
 import { AppShell } from "@/components/AppShell";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-import { listPendingAjustes, listPendingScheduling } from "@/lib/editorial";
+import { countPautaAlerts } from "@/lib/editorial";
 import { isAdminEmail } from "@/lib/admins";
 import { accessLevelOf } from "@/lib/access";
 
@@ -55,8 +55,7 @@ export default async function RootLayout({
   let pautaAlerts = 0;
   if (user && isAdmin) {
     try {
-      const [aj, pend] = await Promise.all([listPendingAjustes(), listPendingScheduling()]);
-      pautaAlerts = aj.length + pend.length;
+      pautaAlerts = await countPautaAlerts();
     } catch {
       /* banco indisponível — sem badge */
     }

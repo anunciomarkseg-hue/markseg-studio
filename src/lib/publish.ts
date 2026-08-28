@@ -171,6 +171,22 @@ export async function publishPost(postId: string): Promise<PublishResult> {
       details.push({ accountId: t.account_id, ok: true, externalId: t.external_post_id ?? undefined });
       continue;
     }
+
+    // ORÇAMENTO DE TEMPO POR CONTA: sem isto, publicar em várias contas
+    // (cada uma com upload + processamento) estoura o limite da função e a
+    // plataforma MATA o processo no meio — deixando estado inconsistente e
+    // resposta perdida. Aqui paramos por conta própria e deixamos o restante
+    // como "processando": o agendador retoma e conclui os que faltaram.
+    if (Date.now() - fnStart > TIME_BUDGET_MS) {
+      processing++;
+      details.push({
+        accountId: t.account_id,
+        ok: false,
+        error: "sem tempo nesta execução — o agendador conclui esta conta em instantes",
+      });
+      continue;
+    }
+
     const acc = accById.get(t.account_id);
     if (!acc) {
       failed++;

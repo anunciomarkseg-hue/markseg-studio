@@ -43,10 +43,29 @@ export function r2PathFromUrl(url: string): string | null {
   return decodeURIComponent(url.slice(PUBLIC_BASE.length + 1));
 }
 
-/** Apaga objetos do R2 (usado na limpeza pós-publicação). */
-export async function deleteFromR2(paths: string[]): Promise<void> {
+/**
+ * Apaga objetos do R2 (usado na limpeza pós-publicação).
+ *
+ * Em paralelo e com prazo máximo: antes era um por vez e sem timeout, então
+ * uma limpeza com muitos arquivos (ou o R2 lento) segurava a função até a
+ * plataforma cortá-la. Devolve quantos falharam, em vez de engolir o erro em
+ * silêncio — assim quem mantém o sistema consegue enxergar o problema.
+ */
+export async function deleteFromR2(paths: string[]): Promise<{ apagados: number; falhas: number }> {
   const c = client();
-  for (const p of paths) {
-    await c.fetch(`${endpoint()}/${p}`, { method: "DELETE" }).catch(() => {});
-  }
+  const results = await Promise.all(
+    paths.map(async (p) => {
+      try {
+        const res = await c.fetch(`${endpoint()}/${p}`, {
+          method: "DELETE",
+          signal: AbortSignal.timeout(15000),
+        });
+        return res.ok || res.status === 404; // já não existe = objetivo cumprido
+      } catch {
+        return false;
+      }
+    }),
+  );
+  const apagados = results.filter(Boolean).length;
+  return { apagados, falhas: results.length - apagados };
 }

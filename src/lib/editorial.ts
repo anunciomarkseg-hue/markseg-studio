@@ -198,3 +198,26 @@ export async function setMonthTheme(groupKey: string, ym: string, theme: string)
     .upsert({ group_key: groupKey, ym, theme }, { onConflict: "group_key,ym" });
   if (error) throw new Error(error.message);
 }
+
+/**
+ * Só o NÚMERO de retornos do cliente que precisam de ação.
+ *
+ * O layout raiz roda em TODA navegação e antes buscava as duas listas inteiras
+ * (com todas as colunas) só pra fazer .length — trabalho de sobra em cada
+ * clique. Aqui pedimos ao banco apenas a contagem, e as duas em paralelo.
+ */
+export async function countPautaAlerts(): Promise<number> {
+  const sb = getSupabaseAdmin();
+  const [ajustes, aprovados] = await Promise.all([
+    sb
+      .from("editorial_posts")
+      .select("id", { count: "exact", head: true })
+      .eq("approval_status", "ajustes"),
+    sb
+      .from("editorial_posts")
+      .select("id", { count: "exact", head: true })
+      .eq("approval_status", "aprovado")
+      .is("scheduled_post_id", null),
+  ]);
+  return (ajustes.count ?? 0) + (aprovados.count ?? 0);
+}

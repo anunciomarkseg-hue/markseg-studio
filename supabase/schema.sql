@@ -11,14 +11,17 @@ create extension if not exists pgcrypto;
 -- ------------------------------------------------------------
 create table if not exists social_accounts (
   id            uuid primary key default gen_random_uuid(),
-  platform      text not null check (platform in ('instagram','facebook')),
+  platform      text not null check (platform in ('instagram','facebook','linkedin','tiktok')),
   handle        text not null,                 -- @markseg
   name          text not null,                 -- MarkSeg
   external_id   text,                          -- IG user id / FB page id
   access_token  text,                          -- token (página/longa duração)
+  refresh_token text,                          -- TikTok: renova o token que expira em ~24h
   token_expires_at timestamptz,
   followers     int  not null default 0,
   avatar        text not null default 'gradient-blue', -- classe de degradê (placeholder)
+  needs_reconnect boolean not null default false,      -- token caducou → avisar
+  token_error   text,                                  -- motivo da última falha de token
   created_at    timestamptz not null default now()
 );
 
@@ -35,6 +38,12 @@ create table if not exists scheduled_posts (
   scheduled_for timestamptz not null,
   status        text not null default 'rascunho'
                   check (status in ('rascunho','agendado','aguardando','publicado','falhou')),
+  cover_url     text,                          -- capa do Reel (frame escolhido)
+  collaborators text[] not null default '{}',  -- @perfis coautores (Collab do IG)
+  share_to_feed boolean not null default false,-- Reel também aparece no feed
+  created_by    text,                          -- e-mail de quem agendou
+  media_deleted boolean not null default false,-- mídia já apagada do storage
+  publish_lock  timestamptz,                   -- trava anti-duplicação (quem está publicando)
   published_at  timestamptz,
   created_at    timestamptz not null default now(),
   updated_at    timestamptz not null default now()
@@ -56,6 +65,7 @@ create table if not exists post_targets (
                      check (status in ('agendado','publicado','falhou')),
   external_post_id text,           -- id retornado pela Meta
   error_message    text,
+  ig_container_id  text,           -- container do Reel enquanto o IG processa
   published_at     timestamptz,
   unique (post_id, account_id)
 );

@@ -11,7 +11,6 @@ type Badger = Navigator & {
   setAppBadge?: (n?: number) => Promise<void>;
   clearAppBadge?: () => Promise<void>;
 };
-type FeedItem = { created_at: string; author_name: string; comments?: FeedItem[] };
 
 function myName(): string {
   try {
@@ -59,17 +58,14 @@ export function UnreadBadge() {
         return;
       }
       try {
-        const d = (await (await fetch("/api/feed", { cache: "no-store" })).json()) as { posts?: FeedItem[] };
-        const posts = d.posts ?? [];
+        // Pede só o NÚMERO ao servidor. Antes baixava o feed inteiro (100 posts
+        // + comentários + reações) a cada 25s, em todas as telas, só pra contar.
         const seenTs = Number(localStorage.getItem(SEEN_KEY) || "0");
-        const me = myName();
-        let unread = 0;
-        for (const p of posts) {
-          if (new Date(p.created_at).getTime() > seenTs && p.author_name !== me) unread++;
-          for (const c of p.comments ?? [])
-            if (new Date(c.created_at).getTime() > seenTs && c.author_name !== me) unread++;
-        }
-        apply(unread);
+        const q = new URLSearchParams({ since: String(seenTs), me: myName() ?? "" });
+        const d = (await (
+          await fetch(`/api/feed/unread?${q}`, { cache: "no-store" })
+        ).json()) as { unread?: number };
+        apply(d.unread ?? 0);
       } catch {
         /* offline: ignora */
       }
