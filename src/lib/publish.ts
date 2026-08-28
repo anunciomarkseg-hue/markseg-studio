@@ -380,24 +380,31 @@ export async function publishPost(postId: string): Promise<PublishResult> {
     }
   }
 
-  // Status final:
+  // Status final. A ordem importa: "processando" é checado PRIMEIRO.
+  // - ainda tem alvo processando  → "agendado" (o cron conclui depois)
   // - todos os alvos OK           → "publicado"
   // - algum alvo falhou (parcial) → "agendado" (o cron reprocessa SÓ o que faltou;
   //   os alvos já publicados são pulados pelo external_post_id, não republica)
-  // - nada publicou, só processando → "agendado"
   // - tudo falhou                 → "falhou"
+  //
+  // ⚠️ Antes, "published > 0 && failed === 0" vinha primeiro: bastava UMA conta
+  // sair (ex.: Facebook) para o post inteiro virar "publicado" enquanto o Reel
+  // do Instagram ainda processava. O cron só busca status "agendado", então o
+  // Reel ficava preso para sempre — e a tela mostrava tudo publicado.
   const newStatus =
-    published > 0 && failed === 0
-      ? "publicado"
-      : published > 0 || processing > 0
-        ? "agendado"
-        : "falhou";
+    processing > 0
+      ? "agendado"
+      : published > 0 && failed === 0
+        ? "publicado"
+        : published > 0
+          ? "agendado"
+          : "falhou";
   await sb
     .from("scheduled_posts")
     .update({
       status: newStatus,
-      // marca a hora só quando saiu 100%; parcial continua pendente até completar
-      published_at: published > 0 && failed === 0 ? now : null,
+      // marca a hora só quando saiu 100%; parcial/processando fica pendente
+      published_at: newStatus === "publicado" ? now : null,
       publish_lock: null,
     })
     .eq("id", postId);

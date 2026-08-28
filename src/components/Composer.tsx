@@ -483,10 +483,16 @@ export function Composer({
       try {
         const pubRes = await fetch(`/api/posts/${postId}/publish`, { method: "POST" });
         pub = await parseResponse(pubRes);
-        if (!pubRes.ok && !pub.cortado) throw new Error(pub.error ?? "Erro ao publicar");
-      } catch (e) {
-        // conexão caiu no meio — trata como corte e vai conferir o estado real
-        if (!postId) throw e;
+        // Erro de aplicação (403, 500 com JSON): mostra AGORA. Só o corte por
+        // tempo (resposta não-JSON) justifica ir conferir o estado real —
+        // engolir tudo aqui fazia qualquer falha virar 45s de "carregando".
+        if (!pubRes.ok && !pub.cortado) {
+          setError(pub.error ?? `Erro ao publicar (código ${pubRes.status})`);
+          return;
+        }
+      } catch {
+        // só cai aqui em falha de REDE (fetch rejeitado) — aí vale conferir o
+        // estado real, porque a publicação pode ter acontecido mesmo assim
         pub = { cortado: true };
       }
 
