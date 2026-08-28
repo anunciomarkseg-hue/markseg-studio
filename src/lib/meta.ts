@@ -505,10 +505,16 @@ export async function findRecentPublished(
   token: string,
   caption: string,
 ): Promise<string | null> {
-  const norm = (s: string) => (s || "").replace(/\s+/g, " ").trim().slice(0, 150).toLowerCase();
+  // Compara a legenda INTEIRA (antes só os 150 primeiros caracteres): duas peças
+  // diferentes de uma mesma campanha costumam começar igual, e a segunda era
+  // "adotada" como já publicada — ficava marcada como publicada SEM NUNCA SAIR.
+  const norm = (s: string) => (s || "").replace(/\s+/g, " ").trim().toLowerCase();
   const target = norm(caption);
   if (target.length < 12) return null; // curto/vazio: não deduplicar
-  const sinceMs = Date.now() - 6 * 60 * 60 * 1000; // 6h
+  // Janela curta: esta guarda existe para o caso de a função morrer DEPOIS de
+  // publicar e ANTES de gravar — isso acontece em minutos, não em horas. Com 6h
+  // ela alcançava posts legítimos do mesmo dia e os dava como já publicados.
+  const sinceMs = Date.now() - 20 * 60 * 1000; // 20 min
   try {
     if (platform === "instagram") {
       const j = await graphGet<{ data?: { id: string; caption?: string; timestamp: string }[] }>(
