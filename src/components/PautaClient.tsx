@@ -76,12 +76,23 @@ type Draft = {
 const isVideoUrl = (u: string) => /\.(mp4|mov|m4v|webm)(\?|$)/i.test(u);
 const isVideoFormat = (f: string) => ["reel", "story", "video"].includes(f);
 
+/**
+ * Data no formato do campo (AAAA-MM-DD) no fuso LOCAL.
+ * toISOString() converteria para UTC e, à noite no Brasil, devolveria o dia
+ * seguinte — como a hora ao lado é local, a pauta pulava um dia sozinha.
+ */
+function dataLocalISO(d: Date): string {
+  const mes = String(d.getMonth() + 1).padStart(2, "0");
+  const dia = String(d.getDate()).padStart(2, "0");
+  return `${d.getFullYear()}-${mes}-${dia}`;
+}
+
 function toDraft(p?: EditorialPost, day?: Date): Draft {
   if (p) {
     const d = new Date(p.planned_date);
     return {
       id: p.id,
-      planned_date: d.toISOString().slice(0, 10),
+      planned_date: dataLocalISO(d),
       time: d.toTimeString().slice(0, 5),
       networks: p.networks ?? [],
       format: p.format,
@@ -98,7 +109,7 @@ function toDraft(p?: EditorialPost, day?: Date): Draft {
   const base = day ?? new Date();
   return {
     id: null,
-    planned_date: base.toISOString().slice(0, 10),
+    planned_date: dataLocalISO(base),
     time: "10:00",
     networks: [],
     format: "feed",

@@ -72,10 +72,23 @@ async function parseResponse(res: Response): Promise<ApiResult> {
 }
 
 
+/**
+ * Data no formato do campo (AAAA-MM-DD) usando o fuso LOCAL.
+ *
+ * Não use toISOString() aqui: ele converte para UTC e, à noite no Brasil
+ * (UTC-3), devolve o dia SEGUINTE. Como o campo de hora já é local, a
+ * publicação era empurrada um dia para frente só de abrir e salvar.
+ */
+function dataLocalISO(d: Date): string {
+  const mes = String(d.getMonth() + 1).padStart(2, "0");
+  const dia = String(d.getDate()).padStart(2, "0");
+  return `${d.getFullYear()}-${mes}-${dia}`;
+}
+
 function defaultDate() {
   const d = new Date();
   d.setDate(d.getDate() + 1);
-  return d.toISOString().slice(0, 10);
+  return dataLocalISO(d);
 }
 
 export function Composer({
@@ -208,7 +221,9 @@ export function Composer({
       if (pf.format && fmtMap[pf.format]) setMediaType(fmtMap[pf.format]);
       if (pf.date) {
         const d = new Date(pf.date);
-        setDate(d.toISOString().slice(0, 10));
+        // data e hora no MESMO fuso (local) — misturar UTC e local empurrava
+        // a publicação um dia pra frente
+        setDate(dataLocalISO(d));
         setTime(d.toTimeString().slice(0, 5));
       }
       if (pf.group) {
