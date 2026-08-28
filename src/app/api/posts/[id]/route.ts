@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { getSupabaseAdmin, supabaseConfigured } from "@/lib/supabase";
 import { deleteFacebookPost } from "@/lib/meta";
 import { deleteLinkedInPost } from "@/lib/linkedin";
+import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { accessLevelOf, canPublish } from "@/lib/access";
 
 export const dynamic = "force-dynamic";
 
@@ -22,6 +24,28 @@ export async function DELETE(_req: Request, { params }: { params: Promise<{ id: 
   if (!supabaseConfigured) {
     return NextResponse.json({ error: "Supabase não configurado" }, { status: 500 });
   }
+
+  // Ação destrutiva: apaga o post do cliente NA REDE SOCIAL. Exige nível que
+  // pode publicar (admin/editor). Sem esta checagem, qualquer pessoa logada —
+  // inclusive nível "viewer" — conseguia apagar publicações de clientes.
+  // Falha fechada de propósito: sem sessão legível, recusa.
+  let nivelOk = false;
+  try {
+    const sbAuth = await createSupabaseServerClient();
+    const {
+      data: { user },
+    } = await sbAuth.auth.getUser();
+    nivelOk = canPublish(accessLevelOf(user));
+  } catch {
+    nivelOk = false;
+  }
+  if (!nivelOk) {
+    return NextResponse.json(
+      { error: "Seu nível de acesso não permite excluir publicações." },
+      { status: 403 },
+    );
+  }
+
   const { id } = await params;
   const sb = getSupabaseAdmin();
 

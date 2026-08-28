@@ -31,13 +31,33 @@ export async function GET() {
     const sb = getSupabaseAdmin();
     const { data, error } = await sb.auth.admin.listUsers({ perPage: 200 });
     if (error) throw error;
+
+    // Migração única e silenciosa: níveis antigos ficavam em user_metadata (que
+    // o próprio usuário conseguia reescrever). Move para app_metadata e apaga o
+    // valor antigo, para ninguém continuar se promovendo sozinho.
+    const migrados = new Map<string, AccessLevel>();
+    await Promise.all(
+      (data.users ?? []).map(async (u) => {
+        const antigo = u.user_metadata?.access_level;
+        if (!antigo || u.app_metadata?.access_level) return;
+        const nivel = parseLevel(antigo);
+        const userMeta = { ...(u.user_metadata ?? {}) };
+        delete (userMeta as Record<string, unknown>).access_level;
+        const { error: mErr } = await sb.auth.admin.updateUserById(u.id, {
+          app_metadata: { ...(u.app_metadata ?? {}), access_level: nivel },
+          user_metadata: userMeta,
+        });
+        if (!mErr) migrados.set(u.id, nivel);
+      }),
+    );
+
     const users = (data.users ?? [])
       .map((u) => ({
         id: u.id,
         email: u.email ?? "",
         name: (u.user_metadata?.full_name as string) ?? "",
         role: (u.user_metadata?.role as string) ?? "",
-        level: accessLevelOf(u),
+        level: migrados.get(u.id) ?? accessLevelOf(u),
         // admin definido pela lista de e-mails é fixo (não dá pra rebaixar pela tela).
         fixedAdmin: isAdminEmail(u.email),
         // "ativo" = já entrou pelo menos uma vez (convite marca e-mail confirmado,
@@ -85,10 +105,11 @@ export async function POST(req: Request) {
       // Manda direto pra tela de senha (client), que lê o token do link e cria a
       // sessão. Assim funciona com o e-mail PADRÃO do Supabase (sem SMTP/template).
       redirectTo: `${siteOrigin(req)}/definir-senha`,
+      // Só dados de exibição aqui — o NÍVEL vai em app_metadata logo abaixo,
+      // porque user_metadata é editável pelo próprio usuário (viraria admin).
       data: {
         full_name: name || undefined,
         role: role || undefined,
-        access_level,
         invited_via: "studio",
       },
     };
@@ -113,6 +134,15 @@ export async function POST(req: Request) {
 
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 400 });
+    }
+
+    // Grava o nível em app_metadata (só o servidor altera). Se falhar, a pessoa
+    // entra como "editor" — nunca como admin por acidente.
+    const criado = await findUserByEmail(sb, email);
+    if (criado) {
+      await sb.auth.admin
+        .updateUserById(criado.id, { app_metadata: { access_level } })
+        .catch(() => {});
     }
     return NextResponse.json({ ok: true, email });
   } catch (e) {
@@ -197,8 +227,10 @@ export async function PATCH(req: Request) {
         { status: 400 },
       );
     }
-    const meta = { ...(got.user.user_metadata ?? {}), access_level };
-    const { error } = await sb.auth.admin.updateUserById(userId, { user_metadata: meta });
+    // ⚠️ O nível vai em app_metadata (só o servidor altera). Em user_metadata o
+    // próprio usuário poderia se promover a admin pelo navegador.
+    const appMeta = { ...(got.user.app_metadata ?? {}), access_level };
+    const { error } = await sb.auth.admin.updateUserById(userId, { app_metadata: appMeta });
     if (error) throw error;
     return NextResponse.json({ ok: true, access_level });
   } catch (e) {

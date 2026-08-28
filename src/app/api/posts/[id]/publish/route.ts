@@ -11,20 +11,23 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
   if (!supabaseConfigured) {
     return NextResponse.json({ error: "Supabase não configurado" }, { status: 500 });
   }
-  // Nível "Visualização" não publica.
+  // Nível "Visualização" não publica. Falha FECHADA: se a sessão não puder ser
+  // lida, recusa — antes o erro caía no catch e a publicação seguia mesmo assim.
+  let podePublicar = false;
   try {
     const sb = await createSupabaseServerClient();
     const {
       data: { user },
     } = await sb.auth.getUser();
-    if (!canPublish(accessLevelOf(user))) {
-      return NextResponse.json(
-        { error: "Seu nível de acesso (Visualização) não permite publicar. Fale com um admin." },
-        { status: 403 },
-      );
-    }
+    podePublicar = canPublish(accessLevelOf(user));
   } catch {
-    /* sem sessão legível — segue (defesa em profundidade; a página já é bloqueada) */
+    podePublicar = false;
+  }
+  if (!podePublicar) {
+    return NextResponse.json(
+      { error: "Seu nível de acesso não permite publicar. Fale com um admin." },
+      { status: 403 },
+    );
   }
   const { id } = await params;
   try {

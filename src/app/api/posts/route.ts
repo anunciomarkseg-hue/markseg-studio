@@ -64,22 +64,26 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Selecione pelo menos uma conta" }, { status: 400 });
   }
 
+  // Nível "Visualização" não cria/agenda posts (só admin e editor).
+  // Falha FECHADA: se a sessão não puder ser lida, recusa. Antes o erro caía no
+  // catch e a requisição seguia — quem não tinha permissão publicava assim.
   let createdBy: string | null = null;
+  let podePublicar = false;
   try {
     const sb = await createSupabaseServerClient();
     const {
       data: { user },
     } = await sb.auth.getUser();
     createdBy = user?.email ?? null;
-    // Nível "Visualização" não cria/agenda posts (só admin e editor).
-    if (!canPublish(accessLevelOf(user))) {
-      return NextResponse.json(
-        { error: "Seu nível de acesso (Visualização) não permite criar publicações. Fale com um admin." },
-        { status: 403 },
-      );
-    }
+    podePublicar = canPublish(accessLevelOf(user));
   } catch {
-    /* sem sessão legível — segue sem autor */
+    podePublicar = false;
+  }
+  if (!podePublicar) {
+    return NextResponse.json(
+      { error: "Seu nível de acesso não permite criar publicações. Fale com um admin." },
+      { status: 403 },
+    );
   }
 
   try {

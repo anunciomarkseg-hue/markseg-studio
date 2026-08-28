@@ -26,16 +26,28 @@ export const ACCESS_HINT: Record<AccessLevel, string> = {
 };
 
 type UserLike =
-  | { email?: string | null; user_metadata?: Record<string, unknown> | null }
+  | {
+      email?: string | null;
+      app_metadata?: Record<string, unknown> | null;
+      user_metadata?: Record<string, unknown> | null;
+    }
   | null
   | undefined;
 
-/** Resolve o nível de um usuário: lista de admins vence; depois user_metadata;
- *  usuários antigos sem nível continuam como "editor" (comportamento atual). */
+/**
+ * Resolve o nível de um usuário.
+ *
+ * ⚠️ SEGURANÇA: o nível vem de `app_metadata`, que só o servidor (service role)
+ * consegue alterar. NÃO use `user_metadata` para isto: o próprio usuário pode
+ * reescrevê-lo pelo navegador (supabase.auth.updateUser) e se promover a admin.
+ *
+ * Ordem: lista fixa de admins (ADMIN_EMAILS) vence; depois app_metadata;
+ * quem não tem nível definido fica como "editor" (comportamento histórico).
+ */
 export function accessLevelOf(user: UserLike): AccessLevel {
   if (!user) return "viewer";
   if (isAdminEmail(user.email)) return "admin";
-  const lvl = user.user_metadata?.access_level;
+  const lvl = user.app_metadata?.access_level;
   if (lvl === "admin" || lvl === "editor" || lvl === "viewer") return lvl;
   return "editor";
 }
