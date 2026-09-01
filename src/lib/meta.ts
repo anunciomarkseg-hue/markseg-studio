@@ -169,8 +169,10 @@ async function preencherTokens(pages: RawPage[], userToken: string, deadline: nu
 export interface PagesResult {
   /** Páginas prontas pra publicar (vieram com token). */
   pages: MetaPage[];
-  /** Apareceram na lista mas ficaram SEM token — não dá pra publicar nelas. */
-  semToken: { id: string; name: string }[];
+  /** Apareceram na lista mas ficaram SEM token — não dá pra publicar nelas.
+   *  Traz também o id do Instagram vinculado: sem ele, quem chamou não
+   *  consegue distinguir "conta não apareceu" de "apareceu sem permissão". */
+  semToken: { id: string; name: string; instagramId?: string }[];
   /** true = a enumeração parou no meio (prazo/teto). A lista está incompleta. */
   truncado: boolean;
 }
@@ -255,7 +257,13 @@ export async function getPages(userToken: string): Promise<PagesResult> {
   // Quem ficou sem token NÃO é publicável, mas quem chamou precisa saber o nome
   // pra poder avisar na tela. Descartar em silêncio foi o que escondeu o
   // problema por tanto tempo.
-  const semToken = all.filter((p) => !p.access_token).map((p) => ({ id: p.id, name: p.name }));
+  const semToken = all
+    .filter((p) => !p.access_token)
+    .map((p) => ({
+      id: p.id,
+      name: p.name,
+      instagramId: p.instagram_business_account?.id,
+    }));
 
   const pages = all
     .filter((p) => p.access_token)
