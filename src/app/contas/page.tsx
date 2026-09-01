@@ -15,6 +15,7 @@ export default async function ContasPage({
     faltaram?: string;
     maisfaltaram?: string;
     semtoken?: string;
+    semtokennomes?: string;
     truncado?: string;
   }>;
 }) {
@@ -66,9 +67,17 @@ export default async function ContasPage({
           )}
           {sp.semtoken && (
             <p className="mt-2 text-sm">
-              {sp.semtoken} Página(s) apareceram na sua lista mas <b>sem permissão de publicar</b>.
-              No Facebook, confira se você é administrador delas e se marcou todas na janela de
-              permissões.
+              {sp.semtoken} Página(s) apareceram na sua lista mas <b>sem permissão de publicar</b>
+              {sp.semtokennomes ? (
+                <>
+                  : <b>{sp.semtokennomes}</b>
+                </>
+              ) : (
+                ""
+              )}
+              . No Facebook, você precisa ser administrador delas com permissão de criar
+              publicações. Confira em Meta Business Suite, Configurações, Páginas, e marque todas na
+              janela de permissões.
             </p>
           )}
           {sp.truncado && (

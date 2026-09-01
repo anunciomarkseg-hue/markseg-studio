@@ -110,11 +110,18 @@ export async function GET(req: Request) {
     const q = new URLSearchParams({ conectado: String(count) });
     if (faltaram.length) {
       // limita o tamanho da URL sem esconder que havia mais
-      const mostra = faltaram.slice(0, 8);
+      const mostra = faltaram.slice(0, 25);
       q.set("faltaram", mostra.join(", "));
       if (faltaram.length > mostra.length) q.set("maisfaltaram", String(faltaram.length - mostra.length));
     }
-    if (semToken.length) q.set("semtoken", String(semToken.length));
+    if (semToken.length) {
+      q.set("semtoken", String(semToken.length));
+      // NOMEAR as Páginas é o que torna o aviso acionável: é nelas que a pessoa
+      // precisa virar administradora com permissão de publicar, no Facebook.
+      // Um número sozinho não diz onde mexer.
+      const nomes = semToken.map((p) => p.name).filter(Boolean).slice(0, 25);
+      if (nomes.length) q.set("semtokennomes", nomes.join(", "));
+    }
     if (truncado) q.set("truncado", "1");
 
     const res = back(`?${q.toString()}`);
