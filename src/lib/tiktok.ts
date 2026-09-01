@@ -14,6 +14,8 @@
  */
 
 import { getSupabaseAdmin } from "./supabase";
+import { mascararSegredos } from "./segredos";
+import type { TesteConexao } from "./meta";
 
 const TT_CLIENT_KEY = process.env.TIKTOK_CLIENT_KEY ?? "";
 const TT_CLIENT_SECRET = process.env.TIKTOK_CLIENT_SECRET ?? "";
@@ -225,26 +227,54 @@ export async function publishToTikTokVideo(
  *
  * O token do TikTok expira em ~24h, então "vencido" é o estado NORMAL dele. Por
  * isso o teste primeiro tenta renovar pelo refresh_token (e persiste o novo);
- * só declara morto se a renovação falhar ou a API recusar.
+ * só declara morto se a renovação for recusada ou a API disser que a credencial
+ * não vale. Falha de rede vira "indeterminado", nunca condenação.
+ *
+ * Atenção: este teste NÃO é somente leitura — `ensureTikTokToken` grava o token
+ * renovado na linha da conta. É desejável, mas consome um refresh.
  */
 export async function checkTikTokToken(acc: {
   id: string;
   access_token: string;
   refresh_token?: string | null;
   token_expires_at?: string | null;
-}): Promise<{ ok: boolean; error?: string }> {
+}): Promise<TesteConexao> {
+  let token: string;
   try {
-    const token = await ensureTikTokToken(acc);
-    const res = await fetchT(`${API}/user/info/?fields=open_id`, {
+    token = await ensureTikTokToken(acc);
+  } catch (e) {
+    // sem refresh_token, ou o TikTok recusou renovar: aí sim é reconectar
+    return { estado: "morto", error: mascararSegredos((e as Error).message) };
+  }
+
+  let res: Response;
+  try {
+    res = await fetchT(`${API}/user/info/?fields=open_id`, {
       headers: { Authorization: `Bearer ${token}` },
     });
-    const json = (await res.json()) as { error?: { code?: string; message?: string } };
-    const code = json.error?.code;
-    if (!res.ok || (code && code !== "ok")) {
-      return { ok: false, error: json.error?.message || `TikTok recusou (HTTP ${res.status})` };
-    }
-    return { ok: true };
   } catch (e) {
-    return { ok: false, error: (e as Error).message };
+    return {
+      estado: "indeterminado",
+      error: `Não consegui falar com o TikTok: ${(e as Error).message}`,
+    };
   }
+
+  let json: { error?: { code?: string; message?: string } };
+  try {
+    json = (await res.json()) as typeof json;
+  } catch {
+    return {
+      estado: "indeterminado",
+      error: `O TikTok respondeu algo que não é JSON (HTTP ${res.status}).`,
+    };
+  }
+
+  const code = json.error?.code;
+  if (res.ok && (!code || code === "ok")) return { estado: "ok" };
+
+  const msg = mascararSegredos(json.error?.message || `O TikTok recusou (HTTP ${res.status}).`);
+  if (res.status === 401 || (code && /token|unauthor/i.test(code))) {
+    return { estado: "morto", error: msg };
+  }
+  return { estado: "indeterminado", error: msg };
 }

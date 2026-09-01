@@ -25,7 +25,10 @@ const RECONNECT_URL: Record<string, string> = {
 export function AccountCard({ account }: { account: SocialAccount }) {
   const router = useRouter();
   const [testando, setTestando] = useState(false);
-  const [resultado, setResultado] = useState<{ ok: boolean; texto: string } | null>(null);
+  const [resultado, setResultado] = useState<{
+    estado: "ok" | "morto" | "indeterminado";
+    texto: string;
+  } | null>(null);
 
   /** Pergunta pra própria rede se o token ainda vale e corrige o estado. */
   async function testar() {
@@ -35,14 +38,21 @@ export function AccountCard({ account }: { account: SocialAccount }) {
       const res = await fetch(`/api/accounts/${account.id}/check`, { method: "POST" });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error ?? `Falha no teste (código ${res.status})`);
-      setResultado(
-        data.ok
-          ? { ok: true, texto: "Conexão OK, a conta publica normalmente." }
-          : { ok: false, texto: data.error ?? "A rede recusou o acesso." },
-      );
+      if (data.estado === "ok") {
+        setResultado({ estado: "ok", texto: "Conexão OK, a conta publica normalmente." });
+      } else if (data.estado === "morto") {
+        setResultado({ estado: "morto", texto: data.error ?? "A rede recusou o acesso." });
+      } else {
+        // Não deu pra concluir. Dizemos isso em vez de chutar — e o estado da
+        // conta no banco fica como estava.
+        setResultado({
+          estado: "indeterminado",
+          texto: `Não deu pra concluir o teste: ${data.error ?? "sem detalhe"}. O estado da conta não foi alterado.`,
+        });
+      }
       router.refresh();
     } catch (e) {
-      setResultado({ ok: false, texto: (e as Error).message });
+      setResultado({ estado: "indeterminado", texto: (e as Error).message });
     } finally {
       setTestando(false);
     }
@@ -128,12 +138,14 @@ export function AccountCard({ account }: { account: SocialAccount }) {
       {resultado && (
         <div
           className={`mt-3 flex items-start gap-2 rounded-xl border p-3 ${
-            resultado.ok
+            resultado.estado === "ok"
               ? "border-emerald-200 bg-emerald-50 text-emerald-800"
-              : "border-rose-200 bg-rose-50 text-rose-700"
+              : resultado.estado === "morto"
+                ? "border-rose-200 bg-rose-50 text-rose-700"
+                : "border-amber-300 bg-amber-50 text-amber-900"
           }`}
         >
-          {resultado.ok ? (
+          {resultado.estado === "ok" ? (
             <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
           ) : (
             <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />

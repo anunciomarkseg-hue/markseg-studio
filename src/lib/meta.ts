@@ -3,6 +3,8 @@
  * Server-only. Usa META_APP_ID / META_APP_SECRET do .env.local.
  */
 
+import { mascararSegredos } from "./segredos";
+
 const GRAPH_VERSION = process.env.META_GRAPH_VERSION ?? "v21.0";
 const GRAPH = `https://graph.facebook.com/${GRAPH_VERSION}`;
 const APP_ID = process.env.META_APP_ID ?? "";
@@ -754,27 +756,72 @@ export async function publishStoryToFacebookPage(
   return fin.post_id ?? start.video_id;
 }
 
+/** Resultado de um teste de conexão.
+ *  "indeterminado" existe de propósito: uma queda de rede ou um 500 da rede NÃO
+ *  provam que o token morreu. Marcar a conta como quebrada nesse caso seria
+ *  repetir o bug que a gente está consertando — pintar de vermelho conta sã. */
+export type EstadoConexao = "ok" | "morto" | "indeterminado";
+export interface TesteConexao {
+  estado: EstadoConexao;
+  /** mensagem literal da rede, já sem credenciais */
+  error?: string;
+}
+
+/** Códigos da Meta que significam credencial inválida (e só eles). Erro de
+ *  permissão (#200, #10) ou de limite (#4, #17) NÃO entra aqui: são problemas
+ *  reais, mas reconectar não resolve. */
+const META_CODIGOS_TOKEN = new Set([190, 102, 458, 459, 460, 463, 464, 467]);
+
 /**
  * Confere se o token guardado ainda vale, PERGUNTANDO à Meta.
  *
  * Existe porque a tela de Contas afirmava "o acesso caducou" com base numa flag
  * antiga, sem nunca verificar. Aqui a resposta vem da fonte, e o motivo devolvido
  * é o texto literal da Meta — não um palpite nosso.
+ *
+ * Não usa o graphGet: ele não olha `res.ok`, então um 500 ou uma página de HTML
+ * viraria "token morto". Aqui a classificação é explícita.
  */
 export async function checkMetaToken(
   externalId: string,
   token: string,
   platform: "facebook" | "instagram",
-): Promise<{ ok: boolean; error?: string }> {
-  if (!externalId) return { ok: false, error: "Conta sem external_id — reconecte pra gravar o id." };
-  if (!token) return { ok: false, error: "Conta sem token guardado — reconecte." };
-  const fields = platform === "instagram" ? "id,username" : "id,name";
-  try {
-    await graphGet<{ id?: string }>(
-      `${GRAPH}/${externalId}?fields=${fields}&access_token=${token}`,
-    );
-    return { ok: true };
-  } catch (e) {
-    return { ok: false, error: (e as Error).message };
+): Promise<TesteConexao> {
+  if (!externalId) {
+    return { estado: "morto", error: "Conta sem external_id — reconecte pra gravar o id." };
   }
+  if (!token) return { estado: "morto", error: "Conta sem token guardado — reconecte." };
+
+  const fields = platform === "instagram" ? "id,username" : "id,name";
+  let res: Response;
+  try {
+    res = await fetch(`${GRAPH}/${externalId}?fields=${fields}&access_token=${token}`, {
+      signal: AbortSignal.timeout(25000),
+    });
+  } catch (e) {
+    // rede caiu / tempo esgotado: não sabemos nada sobre o token
+    return { estado: "indeterminado", error: `Não consegui falar com a Meta: ${(e as Error).message}` };
+  }
+
+  let json: { id?: string; error?: { message?: string; code?: number; type?: string } };
+  try {
+    json = (await res.json()) as typeof json;
+  } catch {
+    return {
+      estado: "indeterminado",
+      error: `A Meta respondeu algo que não é JSON (HTTP ${res.status}).`,
+    };
+  }
+
+  if (!json.error && json.id) return { estado: "ok" };
+
+  const msg = mascararSegredos(json.error?.message ?? `A Meta recusou (HTTP ${res.status}).`);
+  const code = json.error?.code;
+  if (typeof code === "number" && META_CODIGOS_TOKEN.has(code)) {
+    return { estado: "morto", error: msg };
+  }
+  if (res.status >= 500) return { estado: "indeterminado", error: msg };
+  // Erro de verdade, mas não de credencial (permissão, limite, id errado).
+  // Reportamos sem condenar a conta — reconectar não resolveria.
+  return { estado: "indeterminado", error: msg };
 }

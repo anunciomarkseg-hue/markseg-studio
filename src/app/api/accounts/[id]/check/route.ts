@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { getSupabaseAdmin, supabaseConfigured } from "@/lib/supabase";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { accessLevelOf, canManageAccounts } from "@/lib/access";
-import { checkMetaToken } from "@/lib/meta";
+import { checkMetaToken, type TesteConexao } from "@/lib/meta";
 import { checkLinkedInToken } from "@/lib/linkedin";
 import { checkTikTokToken } from "@/lib/tiktok";
 
@@ -58,7 +58,7 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
   if (readErr) return NextResponse.json({ error: readErr.message }, { status: 500 });
   if (!acc) return NextResponse.json({ error: "Conta não encontrada" }, { status: 404 });
 
-  let resultado: { ok: boolean; error?: string };
+  let resultado: TesteConexao;
   if (acc.platform === "facebook" || acc.platform === "instagram") {
     resultado = await checkMetaToken(acc.external_id, acc.access_token, acc.platform);
   } else if (acc.platform === "linkedin") {
@@ -74,18 +74,29 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
 
   // O banco passa a refletir o que a rede acabou de dizer, e não um palpite
   // antigo. É isto que apaga um alerta que ficou preso.
-  await sb
-    .from("social_accounts")
-    .update({
-      needs_reconnect: !resultado.ok,
-      token_error: resultado.ok ? null : (resultado.error ?? "").slice(0, 300) || null,
-    })
-    .eq("id", id);
+  //
+  // "indeterminado" NÃO mexe na flag de propósito: rede caída, 500 da
+  // plataforma ou erro de permissão não provam que a credencial morreu. Marcar
+  // vermelho aí seria recriar o bug que esta rota existe pra consertar.
+  if (resultado.estado === "ok") {
+    await sb
+      .from("social_accounts")
+      .update({ needs_reconnect: false, token_error: null })
+      .eq("id", id);
+  } else if (resultado.estado === "morto") {
+    await sb
+      .from("social_accounts")
+      .update({
+        needs_reconnect: true,
+        token_error: (resultado.error ?? "").slice(0, 300) || null,
+      })
+      .eq("id", id);
+  }
 
   return NextResponse.json({
-    ok: resultado.ok,
+    estado: resultado.estado,
     handle: acc.handle,
     platform: acc.platform,
-    error: resultado.ok ? null : (resultado.error ?? null),
+    error: resultado.error ?? null,
   });
 }
