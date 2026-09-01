@@ -12,10 +12,11 @@ export default async function ContasPage({
   searchParams: Promise<{
     conectado?: string;
     erro?: string;
-    faltaram?: string;
-    maisfaltaram?: string;
-    semtoken?: string;
-    semtokennomes?: string;
+    vistas?: string;
+    naoapareceram?: string;
+    maisnaoapareceram?: string;
+    sempermissao?: string;
+    maissempermissao?: string;
     truncado?: string;
   }>;
 }) {
@@ -52,41 +53,60 @@ export default async function ContasPage({
       )}
 
       {/* Diagnóstico da última reconexão. Sem isto a tela dizia só "N conta(s)
-          conectada(s)" e as Páginas que ficaram de fora sumiam sem aviso. */}
-      {(sp.faltaram || sp.semtoken || sp.truncado) && (
+          conectada(s)" e as Páginas que ficaram de fora sumiam sem aviso.
+          Os dois casos ficam SEPARADOS de propósito: "não apareceu" e
+          "apareceu sem permissão" têm soluções diferentes. */}
+      {(sp.naoapareceram || sp.sempermissao || sp.truncado) && (
         <div className="mb-5 rounded-2xl border border-amber-300 bg-amber-50 p-4 text-amber-900 animate-rise">
           <p className="flex items-center gap-2 text-sm font-semibold">
             <AlertTriangle className="h-5 w-5 shrink-0" /> A reconexão não cobriu tudo
           </p>
-          {sp.faltaram && (
+
+          {sp.vistas && (
             <p className="mt-2 text-sm">
-              Estas contas já cadastradas <b>não vieram</b> nesta reconexão e continuam com o acesso
-              antigo: <b>{sp.faltaram}</b>
-              {sp.maisfaltaram ? ` e mais ${sp.maisfaltaram}` : ""}.
+              O Facebook mostrou <b>{sp.vistas} Página(s)</b> para o login que você usou.
             </p>
           )}
-          {sp.semtoken && (
-            <p className="mt-2 text-sm">
-              {sp.semtoken} Página(s) apareceram na sua lista mas <b>sem permissão de publicar</b>
-              {sp.semtokennomes ? (
-                <>
-                  : <b>{sp.semtokennomes}</b>
-                </>
-              ) : (
-                ""
-              )}
-              . No Facebook, você precisa ser administrador delas com permissão de criar
-              publicações. Confira em Meta Business Suite, Configurações, Páginas, e marque todas na
-              janela de permissões.
-            </p>
+
+          {sp.sempermissao && (
+            <div className="mt-3 rounded-xl border border-amber-300 bg-white/60 p-3">
+              <p className="text-sm font-semibold">Apareceram, mas sem permissão de publicar</p>
+              <p className="mt-1 text-sm">
+                <b>{sp.sempermissao}</b>
+                {sp.maissempermissao ? ` e mais ${sp.maissempermissao}` : ""}.
+              </p>
+              <p className="mt-1 text-xs">
+                O Facebook enxerga essas Páginas no seu login, mas não liberou publicação. Em Meta
+                Business Suite, Configurações do negócio, Páginas, aba Pessoas: seu usuário precisa
+                de acesso total, ou no mínimo &quot;Criar publicações&quot; com &quot;Gerenciar
+                Página&quot;. Analista e Anunciante não servem.
+              </p>
+            </div>
           )}
+
+          {sp.naoapareceram && (
+            <div className="mt-3 rounded-xl border border-amber-300 bg-white/60 p-3">
+              <p className="text-sm font-semibold">Nem apareceram na lista</p>
+              <p className="mt-1 text-sm">
+                <b>{sp.naoapareceram}</b>
+                {sp.maisnaoapareceram ? ` e mais ${sp.maisnaoapareceram}` : ""}.
+              </p>
+              <p className="mt-1 text-xs">
+                Não é permissão de publicar: o login que você usou não alcança essas Páginas de
+                jeito nenhum. Ou elas estão em outro Business, ou o seu usuário foi removido delas,
+                ou quem precisa reconectar é outra pessoa. Elas continuam com o acesso antigo.
+              </p>
+            </div>
+          )}
+
           {sp.truncado && (
-            <p className="mt-2 text-sm">
+            <p className="mt-3 text-sm">
               A lista de Páginas veio <b>incompleta</b> (a Meta demorou demais pra responder). Tente
-              reconectar de novo.
+              reconectar de novo antes de investigar o resto.
             </p>
           )}
-          <p className="mt-2 text-xs">
+
+          <p className="mt-3 text-xs">
             Dica: use <b>Testar conexão</b> na conta que ficou de fora pra ver o motivo exato que a
             rede dá.
           </p>

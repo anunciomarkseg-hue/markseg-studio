@@ -92,35 +92,51 @@ export async function GET(req: Request) {
       salvos.add(pg.id);
       if (pg.instagram) salvos.add(pg.instagram.id);
     }
+    // Tudo que a Meta MOSTROU, tendo dado token ou não. É o que separa
+    // "a conta nem apareceu na sua lista" de "apareceu mas sem permissão" —
+    // dois problemas com soluções completamente diferentes, que antes o aviso
+    // juntava num monte só.
+    const vistos = new Set<string>(salvos);
+    for (const pg of semToken) {
+      vistos.add(pg.id);
+      if (pg.instagramId) vistos.add(pg.instagramId);
+    }
 
-    let faltaram: string[] = [];
+    const semPermissao: string[] = [];
+    const naoApareceram: string[] = [];
     try {
       const { data: existentes } = await getSupabaseAdmin()
         .from("social_accounts")
         .select("handle, name, external_id, platform")
         .in("platform", ["facebook", "instagram"]);
-      faltaram = (existentes ?? [])
-        .filter((a) => !a.external_id || !salvos.has(a.external_id))
-        .map((a) => a.handle || a.name)
-        .filter(Boolean);
+      for (const a of existentes ?? []) {
+        if (a.external_id && salvos.has(a.external_id)) continue; // veio, tudo certo
+        const nome = a.handle || a.name;
+        if (!nome) continue;
+        if (a.external_id && vistos.has(a.external_id)) semPermissao.push(nome);
+        else naoApareceram.push(nome);
+      }
     } catch {
       /* diagnóstico é extra: nunca derruba a reconexão */
     }
 
     const q = new URLSearchParams({ conectado: String(count) });
-    if (faltaram.length) {
-      // limita o tamanho da URL sem esconder que havia mais
-      const mostra = faltaram.slice(0, 25);
-      q.set("faltaram", mostra.join(", "));
-      if (faltaram.length > mostra.length) q.set("maisfaltaram", String(faltaram.length - mostra.length));
+    // Quantas Páginas a Meta mostrou no total: é o número que diz se o login
+    // usado enxerga o parque inteiro ou só um pedaço dele.
+    q.set("vistas", String(pages.length + semToken.length));
+    if (naoApareceram.length) {
+      const mostra = naoApareceram.slice(0, 25);
+      q.set("naoapareceram", mostra.join(", "));
+      if (naoApareceram.length > mostra.length) {
+        q.set("maisnaoapareceram", String(naoApareceram.length - mostra.length));
+      }
     }
-    if (semToken.length) {
-      q.set("semtoken", String(semToken.length));
-      // NOMEAR as Páginas é o que torna o aviso acionável: é nelas que a pessoa
-      // precisa virar administradora com permissão de publicar, no Facebook.
-      // Um número sozinho não diz onde mexer.
-      const nomes = semToken.map((p) => p.name).filter(Boolean).slice(0, 25);
-      if (nomes.length) q.set("semtokennomes", nomes.join(", "));
+    if (semPermissao.length) {
+      const mostra = semPermissao.slice(0, 25);
+      q.set("sempermissao", mostra.join(", "));
+      if (semPermissao.length > mostra.length) {
+        q.set("maissempermissao", String(semPermissao.length - mostra.length));
+      }
     }
     if (truncado) q.set("truncado", "1");
 
