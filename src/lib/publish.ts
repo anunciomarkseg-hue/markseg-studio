@@ -1,4 +1,5 @@
 import { getSupabaseAdmin } from "./supabase";
+import { mascararSegredos } from "./segredos";
 import {
   publishToInstagram,
   publishToFacebookPage,
@@ -60,9 +61,12 @@ async function findSiblingPublished(
   return hit?.external_post_id ?? null;
 }
 
-/** Erro que indica token da Meta expirado/invalidado (precisa reconectar). */
+/** Erro que indica token da Meta expirado/invalidado (precisa reconectar).
+ *  As duas últimas alternativas cobrem a ordem INVERTIDA das palavras: a Meta
+ *  responde "Invalid OAuth access token - Cannot parse access token", que não
+ *  casava com `access token.*(expired|invalid)` e passava batido. */
 function isTokenError(msg: string): boolean {
-  return /error validating access token|oauthexception|session has been invalidated|access token.*(expired|invalid)|code 190|malformed access token/i.test(
+  return /error validating access token|oauthexception|session has been invalidated|access token.*(expired|invalid)|invalid.*access token|access token.*(could not be decrypted|not found)|code 190|malformed access token/i.test(
     msg,
   );
 }
@@ -370,12 +374,20 @@ export async function publishPost(postId: string): Promise<PublishResult> {
       details.push({ accountId: t.account_id, ok: true, externalId });
     } catch (e) {
       const msg = (e as Error).message;
-      await sb.from("post_targets").update({ status: "falhou", error_message: msg }).eq("id", t.id);
+      await sb
+        .from("post_targets")
+        .update({ status: "falhou", error_message: mascararSegredos(msg) })
+        .eq("id", t.id);
       // token da Meta caducou → marca a conta pra reconectar (aviso proativo)
       if (isTokenError(msg)) {
         await sb
           .from("social_accounts")
-          .update({ needs_reconnect: true, token_error: msg.slice(0, 300) })
+          .update({
+            needs_reconnect: true,
+            // a Meta ecoa o token na mensagem ("Malformed access token AAAA…"),
+            // e este texto vai parar na tela — mascara antes de guardar
+            token_error: mascararSegredos(msg).slice(0, 300),
+          })
           .eq("id", t.account_id);
       }
       failed++;

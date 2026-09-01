@@ -4,6 +4,9 @@
  * Requer o produto "Community Management API" aprovado no app do LinkedIn.
  */
 
+import { mascararSegredos } from "./segredos";
+import type { TesteConexao } from "./meta";
+
 const LI_CLIENT_ID = process.env.LINKEDIN_CLIENT_ID ?? "";
 const LI_CLIENT_SECRET = process.env.LINKEDIN_CLIENT_SECRET ?? "";
 const LI_VERSION = process.env.LINKEDIN_API_VERSION ?? "202405";
@@ -165,19 +168,39 @@ export async function deleteLinkedInPost(postUrn: string, token: string): Promis
   }
 }
 
-/** Confere se o token do LinkedIn ainda vale, perguntando à API. Devolve o
- *  motivo literal quando não vale, em vez de a gente supor. */
-export async function checkLinkedInToken(token: string): Promise<{ ok: boolean; error?: string }> {
-  if (!token) return { ok: false, error: "Conta sem token guardado — reconecte." };
+/**
+ * Confere se o token do LinkedIn ainda vale, perguntando à API.
+ *
+ * 401/403 = credencial morta (e o LinkedIn não guarda refresh_token aqui, então
+ * é login novo). Qualquer outra falha vira "indeterminado": um 500 ou uma queda
+ * de rede não provam nada, e condenar a conta nesse caso seria repetir o bug de
+ * pintar de vermelho quem está saudável.
+ */
+export async function checkLinkedInToken(token: string): Promise<TesteConexao> {
+  if (!token) return { estado: "morto", error: "Conta sem token guardado — reconecte." };
+  let res: Response;
   try {
-    const res = await fetchT(
+    res = await fetchT(
       "https://api.linkedin.com/v2/organizationAcls?q=roleAssignee&role=ADMINISTRATOR&state=APPROVED&count=1",
       { headers: liHeaders(token) },
     );
-    const json = (await res.json()) as { message?: string };
-    if (!res.ok) return { ok: false, error: json.message || `LinkedIn recusou (HTTP ${res.status})` };
-    return { ok: true };
   } catch (e) {
-    return { ok: false, error: (e as Error).message };
+    return {
+      estado: "indeterminado",
+      error: `Não consegui falar com o LinkedIn: ${(e as Error).message}`,
+    };
   }
+  let json: { message?: string };
+  try {
+    json = (await res.json()) as { message?: string };
+  } catch {
+    return {
+      estado: "indeterminado",
+      error: `O LinkedIn respondeu algo que não é JSON (HTTP ${res.status}).`,
+    };
+  }
+  if (res.ok) return { estado: "ok" };
+  const msg = mascararSegredos(json.message || `O LinkedIn recusou (HTTP ${res.status}).`);
+  if (res.status === 401 || res.status === 403) return { estado: "morto", error: msg };
+  return { estado: "indeterminado", error: msg };
 }

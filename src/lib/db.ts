@@ -1,5 +1,6 @@
 import { getSupabaseAdmin } from "./supabase";
 import type { MediaType, PostStatus, ScheduledPost, SocialAccount } from "./types";
+import { mascararSegredos } from "./segredos";
 
 /**
  * Camada de acesso ao banco (server-only).
@@ -15,7 +16,14 @@ export async function listAccounts(): Promise<SocialAccount[]> {
     .from("social_accounts")
     .select(`${base}, needs_reconnect, token_error`)
     .order("created_at", { ascending: true });
-  if (!full.error) return (full.data ?? []) as unknown as SocialAccount[];
+  if (!full.error) {
+    // Mascara na LEITURA também: as linhas gravadas antes desta correção têm o
+    // texto cru da rede, que pode conter o próprio token.
+    return (full.data ?? []).map((a) => ({
+      ...a,
+      token_error: a.token_error ? mascararSegredos(a.token_error) : a.token_error,
+    })) as unknown as SocialAccount[];
+  }
   const basic = await sb.from("social_accounts").select(base).order("created_at", { ascending: true });
   if (basic.error) throw new Error(basic.error.message);
   return (basic.data ?? []) as unknown as SocialAccount[];
@@ -35,15 +43,18 @@ export async function listPosts(): Promise<ScheduledPost[]> {
   if (ids.length) {
     const { data: targets, error: tErr } = await sb
       .from("post_targets")
-      .select("post_id, account_id, error_message")
+      .select("post_id, account_id, status, error_message")
       .in("post_id", ids);
     if (tErr) throw new Error(tErr.message);
     for (const t of targets ?? []) {
       (targetsByPost[t.post_id] ??= []).push(t.account_id);
-      if (t.error_message) {
+      // Só o erro do que NÃO saiu. Sem o filtro de status, um erro antigo de um
+      // destino que depois publicou continuaria aparecendo como se o post
+      // tivesse falhado.
+      if (t.error_message && t.status !== "publicado") {
         (errorsByPost[t.post_id] ??= []).push({
           accountId: t.account_id,
-          error: t.error_message,
+          error: mascararSegredos(t.error_message),
         });
       }
     }
