@@ -42,3 +42,21 @@ export function relativeLabel(iso: string): string {
   if (diff === -1) return "Ontem";
   return fmtDay(iso);
 }
+
+/**
+ * Valor pro <input type="date"> (AAAA-MM-DD) no fuso LOCAL.
+ *
+ * Não use toISOString(): ele converte pra UTC e, à noite no Brasil (UTC-3),
+ * devolve o dia SEGUINTE — a data apareceria errada no campo.
+ */
+export function dateInputValue(iso: string): string {
+  const d = new Date(iso);
+  const mes = String(d.getMonth() + 1).padStart(2, "0");
+  const dia = String(d.getDate()).padStart(2, "0");
+  return `${d.getFullYear()}-${mes}-${dia}`;
+}
+
+/** Valor pro <input type="time"> (HH:MM) no fuso LOCAL. */
+export function timeInputValue(iso: string): string {
+  return fmtTime(iso);
+}

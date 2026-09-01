@@ -3,10 +3,11 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Plus, Send, Trash2, Loader2, CheckCircle2, AlertCircle } from "lucide-react";
+import { Plus, Send, Trash2, Loader2, CheckCircle2, AlertCircle, CalendarClock, X } from "lucide-react";
 import { STATUS_LABEL, type PostStatus, type ScheduledPost, type SocialAccount } from "@/lib/types";
 import { PostListItem } from "@/components/PostListItem";
 import { acompanharPost } from "@/lib/postStatus";
+import { dateInputValue, fmtDayTime, timeInputValue } from "@/lib/format";
 
 type Filter = "todas" | PostStatus;
 const FILTERS: Filter[] = ["todas", "agendado", "aguardando", "publicado", "rascunho", "falhou"];
@@ -20,8 +21,15 @@ export function PublicacoesClient({
 }) {
   const router = useRouter();
   const [filter, setFilter] = useState<Filter>("todas");
-  const [busy, setBusy] = useState<{ id: string; action: "publish" | "delete" | "republish" } | null>(null);
+  const [busy, setBusy] = useState<{
+    id: string;
+    action: "publish" | "delete" | "republish" | "reschedule";
+  } | null>(null);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  /** post aberto pra reagendar + os campos de data/hora em edição */
+  const [reagendando, setReagendando] = useState<{ id: string; date: string; time: string } | null>(
+    null,
+  );
 
   const list = posts
     .filter((p) => filter === "todas" || p.status === filter)
@@ -132,6 +140,70 @@ export function PublicacoesClient({
     }
   }
 
+  /** Abre/fecha o painel de nova data, já preenchido com o agendamento atual. */
+  function toggleReagendar(post: ScheduledPost) {
+    setMsg(null);
+    setReagendando((atual) =>
+      atual?.id === post.id
+        ? null
+        : {
+            id: post.id,
+            date: dateInputValue(post.scheduledFor),
+            time: timeInputValue(post.scheduledFor),
+          },
+    );
+  }
+
+  /** Salva a nova data/hora do agendamento (só antes de o post sair). */
+  async function salvarNovaData() {
+    if (!reagendando) return;
+    const { id, date, time } = reagendando;
+    if (!date || !time) {
+      setMsg({ ok: false, text: "Preencha a data e a hora." });
+      return;
+    }
+    // Fuso LOCAL de propósito: o campo mostra a hora do Brasil e o servidor
+    // guarda o instante em UTC. Montar por string evitaria isso e empurraria
+    // a publicação pra outro horário.
+    const quando = new Date(`${date}T${time}`);
+    if (Number.isNaN(quando.getTime())) {
+      setMsg({ ok: false, text: "Data ou hora inválida." });
+      return;
+    }
+    if (quando.getTime() < Date.now()) {
+      setMsg({ ok: false, text: "Escolha uma data no futuro (pra publicar já, use 'Publicar agora')." });
+      return;
+    }
+
+    setMsg(null);
+    setBusy({ id, action: "reschedule" });
+    try {
+      const res = await fetch(`/api/posts/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ scheduledFor: quando.toISOString() }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error ?? "Falha ao reagendar");
+
+      const label = quando.toLocaleDateString("pt-BR", {
+        weekday: "long",
+        day: "2-digit",
+        month: "long",
+      });
+      setMsg({
+        ok: true,
+        text: `Reagendado para ${label} às ${time}.${data.requeued ? " O post voltou para a fila e será enviado nessa nova data." : ""}`,
+      });
+      setReagendando(null);
+      router.refresh();
+    } catch (e) {
+      setMsg({ ok: false, text: (e as Error).message });
+    } finally {
+      setBusy(null);
+    }
+  }
+
   return (
     <div className="mx-auto max-w-5xl">
       <div className="mb-6 flex flex-wrap items-center justify-between gap-4 animate-rise">
@@ -185,10 +257,26 @@ export function PublicacoesClient({
         ) : (
           list.map((p) => {
             const isBusy = busy?.id === p.id;
+            const aberto = reagendando?.id === p.id;
             return (
               <div key={p.id} className="space-y-2">
                 <PostListItem post={p} accounts={accounts} />
                 <div className="flex items-center justify-end gap-2 px-1">
+                  {p.status !== "publicado" && (
+                    <button
+                      onClick={() => toggleReagendar(p)}
+                      disabled={isBusy}
+                      title="Mudar a data/hora do agendamento (antes de o post sair)"
+                      className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold transition-fluid disabled:opacity-50 ${
+                        aberto
+                          ? "border-brand-blue bg-brand-blue-50 text-brand-blue-700"
+                          : "border-line text-ink hover:bg-canvas"
+                      }`}
+                    >
+                      {aberto ? <X className="h-3.5 w-3.5" /> : <CalendarClock className="h-3.5 w-3.5" />}
+                      {aberto ? "Cancelar" : "Reagendar"}
+                    </button>
+                  )}
                   {p.status !== "publicado" && (
                     <button
                       onClick={() => publishNow(p.id)}
@@ -231,6 +319,51 @@ export function PublicacoesClient({
                     {p.status === "publicado" ? "Apagar post" : "Excluir"}
                   </button>
                 </div>
+
+                {aberto && reagendando && (
+                  <div className="rounded-2xl border border-brand-blue/30 bg-brand-blue-50/40 p-4 animate-rise">
+                    <p className="mb-3 flex items-center gap-2 text-sm font-semibold text-ink">
+                      <CalendarClock className="h-4 w-4 text-brand-blue" /> Nova data do agendamento
+                    </p>
+                    <div className="flex flex-wrap items-center gap-3">
+                      <input
+                        type="date"
+                        value={reagendando.date}
+                        min={dateInputValue(new Date().toISOString())}
+                        onChange={(e) =>
+                          setReagendando({ ...reagendando, date: e.target.value })
+                        }
+                        className="rounded-xl border border-line bg-white px-3 py-2.5 text-sm text-ink outline-none focus:border-brand-blue"
+                      />
+                      <input
+                        type="time"
+                        value={reagendando.time}
+                        onChange={(e) =>
+                          setReagendando({ ...reagendando, time: e.target.value })
+                        }
+                        className="rounded-xl border border-line bg-white px-3 py-2.5 text-sm text-ink outline-none focus:border-brand-blue"
+                      />
+                      <button
+                        onClick={salvarNovaData}
+                        disabled={isBusy}
+                        className="gradient-brand flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold text-white shadow-card transition-fluid hover:opacity-95 disabled:opacity-50"
+                      >
+                        {isBusy && busy?.action === "reschedule" ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <CalendarClock className="h-4 w-4" />
+                        )}
+                        Salvar nova data
+                      </button>
+                    </div>
+                    <p className="mt-2 text-xs text-muted">
+                      Agendado hoje para <b>{fmtDayTime(p.scheduledFor)}</b>. A troca vale só
+                      enquanto o post não saiu.
+                      {p.status === "falhou" &&
+                        " Como ele falhou, vai voltar para a fila e ser reenviado nessa nova data (o que já publicou não duplica)."}
+                    </p>
+                  </div>
+                )}
               </div>
             );
           })
