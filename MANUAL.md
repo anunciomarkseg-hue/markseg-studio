@@ -322,6 +322,16 @@ rebaixado pela interface.
 3. Corrigido o motivo, clique em **Republicar** — ele reenvia **só o que não
    saiu** e não duplica o que já foi publicado.
 
+### "Preciso adiar (ou antecipar) um post agendado"
+
+1. Abra **Publicações** e ache o post.
+2. Clique em **Reagendar**, escolha a nova data e hora e salve.
+3. Vale só enquanto o post **não saiu**: publicado não muda de data, e post em
+   pleno envio é recusado até terminar. Post que **falhou** volta pra fila e
+   sai na data nova (o que já publicou não duplica).
+
+Por baixo: `PATCH /api/posts/<id>` com `{ "scheduledFor": "<ISO>" }`.
+
 ### "Aparece um erro estranho na tela"
 
 Vá em **Vercel → Logs**, filtre pelo horário e procure a rota (`/api/...`). O
