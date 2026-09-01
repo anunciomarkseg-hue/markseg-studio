@@ -99,29 +99,90 @@ interface RawPage {
 /** Lista as Páginas que o usuário administra + a conta de Instagram vinculada a cada uma. */
 const PAGE_FIELDS = "id,name,access_token,instagram_business_account{id,username,followers_count}";
 
-/** Segue a paginação (paging.next) de uma "edge", com limite de tempo (deadline). */
-async function pagedEdge<T>(startUrl: string, deadline: number): Promise<T[]> {
+/** Segue a paginação (paging.next) de uma "edge", com limite de tempo (deadline).
+ *  Devolve também `truncado`: quando o prazo (ou o teto de páginas) corta a
+ *  enumeração no meio, quem chamou PRECISA saber — antes isso era silencioso e
+ *  Páginas do fim da lista simplesmente desapareciam da reconexão. */
+async function pagedEdge<T>(
+  startUrl: string,
+  deadline: number,
+): Promise<{ items: T[]; truncado: boolean }> {
   let url: string | null = startUrl;
   const out: T[] = [];
   let guard = 0;
-  while (url && guard < 25) {
-    if (Date.now() > deadline) break; // não estoura o tempo da função (evita 504)
+  while (url) {
+    if (guard >= 25 || Date.now() > deadline) {
+      return { items: out, truncado: true }; // parou no meio: não estoura o tempo (evita 504)
+    }
     guard++;
     const json: { data?: T[]; paging?: { next?: string } } = await graphGet(url);
     for (const item of json.data ?? []) out.push(item);
     url = json.paging?.next ?? null; // o "next" já vem com o token embutido
   }
-  return out;
+  return { items: out, truncado: false };
 }
 
-export async function getPages(userToken: string): Promise<MetaPage[]> {
+/**
+ * Preenche o token das Páginas que vieram sem ele (comum nas Páginas do
+ * Business Manager).
+ *
+ * Antes isto era um laço SEQUENCIAL com teto de 60: cada Página custava uma ida
+ * e volta à Meta, então numa agência com muitas Páginas o prazo estourava no
+ * meio do laço. As Páginas que sobravam ficavam sem token e eram descartadas
+ * silenciosamente lá embaixo — ou seja, sempre os MESMOS clientes do fim da
+ * lista nunca reconectavam, sem nenhum aviso na tela.
+ *
+ * A Graph API aceita `?ids=a,b,c` (até 50 por chamada). Um lote de 50 vira UMA
+ * requisição, o que tira o gargalo e faz caber todo mundo no orçamento.
+ */
+async function preencherTokens(pages: RawPage[], userToken: string, deadline: number): Promise<void> {
+  const faltando = pages.filter((p) => !p.access_token);
+  for (let i = 0; i < faltando.length; i += 50) {
+    if (Date.now() > deadline) break;
+    const lote = faltando.slice(i, i + 50);
+    const ids = lote.map((p) => encodeURIComponent(p.id)).join(",");
+    try {
+      const r = await graphGet<Record<string, { access_token?: string }>>(
+        `${GRAPH}/?ids=${ids}&fields=access_token&access_token=${userToken}`,
+      );
+      for (const p of lote) {
+        const t = r?.[p.id]?.access_token;
+        if (t) p.access_token = t;
+      }
+    } catch {
+      // um id problemático derruba o lote inteiro na Graph — cai pro individual,
+      // mas em PARALELO (o custo é uma rodada só, não uma por Página).
+      await Promise.allSettled(
+        lote.map(async (p) => {
+          const r = await graphGet<{ access_token?: string }>(
+            `${GRAPH}/${p.id}?fields=access_token&access_token=${userToken}`,
+          );
+          if (r.access_token) p.access_token = r.access_token;
+        }),
+      );
+    }
+  }
+}
+
+export interface PagesResult {
+  /** Páginas prontas pra publicar (vieram com token). */
+  pages: MetaPage[];
+  /** Apareceram na lista mas ficaram SEM token — não dá pra publicar nelas. */
+  semToken: { id: string; name: string }[];
+  /** true = a enumeração parou no meio (prazo/teto). A lista está incompleta. */
+  truncado: boolean;
+}
+
+export async function getPages(userToken: string): Promise<PagesResult> {
   // Junta Páginas de TRÊS origens e deduplica pelo id da Página:
   //  1) cargo clássico (/me/accounts)
   //  2) Páginas do Business Manager (owned_pages)  ← agências caem aqui
   //  3) Páginas de clientes no Business (client_pages)
   // Tudo com um ORÇAMENTO DE TEMPO pra não estourar o limite da função (504).
-  const deadline = Date.now() + 35_000;
+  // A rota do callback tem maxDuration=60. Deixamos folga pros upserts no banco.
+  const deadline = Date.now() + 42_000;
   const enc = encodeURIComponent(PAGE_FIELDS);
+  let truncado = false;
 
   const byId = new Map<string, RawPage>();
   const add = (p: RawPage) => {
@@ -133,8 +194,12 @@ export async function getPages(userToken: string): Promise<MetaPage[]> {
 
   // 1) cargo clássico
   try {
-    for (const p of await pagedEdge<RawPage>(`${GRAPH}/me/accounts?fields=${enc}&limit=100&access_token=${userToken}`, deadline))
-      add(p);
+    const r = await pagedEdge<RawPage>(
+      `${GRAPH}/me/accounts?fields=${enc}&limit=100&access_token=${userToken}`,
+      deadline,
+    );
+    if (r.truncado) truncado = true;
+    for (const p of r.items) add(p);
   } catch {
     /* segue com as outras origens */
   }
@@ -142,43 +207,46 @@ export async function getPages(userToken: string): Promise<MetaPage[]> {
   // 2) e 3) via Business Manager (as duas edges em paralelo por Business)
   if (Date.now() < deadline) {
     try {
-      const bizs = await pagedEdge<{ id: string }>(`${GRAPH}/me/businesses?fields=id&limit=50&access_token=${userToken}`, deadline);
-      for (const b of bizs) {
-        if (Date.now() > deadline) break;
+      const biz = await pagedEdge<{ id: string }>(
+        `${GRAPH}/me/businesses?fields=id&limit=50&access_token=${userToken}`,
+        deadline,
+      );
+      if (biz.truncado) truncado = true;
+      for (const b of biz.items) {
+        if (Date.now() > deadline) {
+          truncado = true; // sobraram Businesses sem visitar
+          break;
+        }
         const results = await Promise.all(
           ["owned_pages", "client_pages"].map((edge) =>
-            pagedEdge<RawPage>(`${GRAPH}/${b.id}/${edge}?fields=${enc}&limit=100&access_token=${userToken}`, deadline).catch(
-              () => [] as RawPage[],
-            ),
+            pagedEdge<RawPage>(
+              `${GRAPH}/${b.id}/${edge}?fields=${enc}&limit=100&access_token=${userToken}`,
+              deadline,
+            ).catch(() => ({ items: [] as RawPage[], truncado: true })),
           ),
         );
-        for (const arr of results) for (const p of arr) add(p);
+        for (const r of results) {
+          if (r.truncado) truncado = true;
+          for (const p of r.items) add(p);
+        }
       }
     } catch {
       /* sem Business ou sem permissão — segue só com o clássico */
     }
   }
 
-  // Páginas do Business às vezes vêm SEM token. Busca o token individual, mas
-  // de forma LIMITADA (respeitando o deadline e um teto) pra não estourar (504).
+  // Páginas do Business às vezes vêm SEM token — preenche em lote (ver acima).
   const all = [...byId.values()];
-  let extraFetches = 0;
-  for (const p of all) {
-    if (p.access_token) continue;
-    if (extraFetches >= 60 || Date.now() > deadline) break;
-    extraFetches++;
-    try {
-      const r = await graphGet<{ access_token?: string }>(
-        `${GRAPH}/${p.id}?fields=access_token&access_token=${userToken}`,
-      );
-      if (r.access_token) p.access_token = r.access_token;
-    } catch {
-      /* fica sem token; será ignorada abaixo */
-    }
-  }
+  await preencherTokens(all, userToken, deadline);
+  if (Date.now() > deadline) truncado = true;
 
-  return all
-    .filter((p) => p.access_token) // só Páginas publicáveis (com token)
+  // Quem ficou sem token NÃO é publicável, mas quem chamou precisa saber o nome
+  // pra poder avisar na tela. Descartar em silêncio foi o que escondeu o
+  // problema por tanto tempo.
+  const semToken = all.filter((p) => !p.access_token).map((p) => ({ id: p.id, name: p.name }));
+
+  const pages = all
+    .filter((p) => p.access_token)
     .map((p) => ({
       id: p.id,
       name: p.name,
@@ -191,6 +259,8 @@ export async function getPages(userToken: string): Promise<MetaPage[]> {
           }
         : undefined,
     }));
+
+  return { pages, semToken, truncado };
 }
 
 /** Publica uma imagem no Instagram (cria container + publica). Retorna o id do post. */
@@ -682,4 +752,29 @@ export async function publishStoryToFacebookPage(
   };
   if (fin.error) throw new Error(fin.error.message || "Falha ao finalizar o Story de vídeo no Facebook");
   return fin.post_id ?? start.video_id;
+}
+
+/**
+ * Confere se o token guardado ainda vale, PERGUNTANDO à Meta.
+ *
+ * Existe porque a tela de Contas afirmava "o acesso caducou" com base numa flag
+ * antiga, sem nunca verificar. Aqui a resposta vem da fonte, e o motivo devolvido
+ * é o texto literal da Meta — não um palpite nosso.
+ */
+export async function checkMetaToken(
+  externalId: string,
+  token: string,
+  platform: "facebook" | "instagram",
+): Promise<{ ok: boolean; error?: string }> {
+  if (!externalId) return { ok: false, error: "Conta sem external_id — reconecte pra gravar o id." };
+  if (!token) return { ok: false, error: "Conta sem token guardado — reconecte." };
+  const fields = platform === "instagram" ? "id,username" : "id,name";
+  try {
+    await graphGet<{ id?: string }>(
+      `${GRAPH}/${externalId}?fields=${fields}&access_token=${token}`,
+    );
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: (e as Error).message };
+  }
 }

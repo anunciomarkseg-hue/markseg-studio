@@ -356,13 +356,16 @@ export async function publishPost(postId: string): Promise<PublishResult> {
           ig_container_id: null,
         })
         .eq("id", t.id);
-      // deu certo → limpa qualquer alerta de token expirado da conta
-      if (acc.platform === "instagram" || acc.platform === "facebook") {
-        await sb
-          .from("social_accounts")
-          .update({ needs_reconnect: false, token_error: null })
-          .eq("id", acc.id);
-      }
+      // Deu certo → limpa qualquer alerta de token expirado da conta.
+      // Vale pra TODA plataforma. Antes só instagram/facebook eram limpos,
+      // enquanto o alerta abaixo é ligado pra qualquer uma: uma conta de
+      // LinkedIn ou TikTok que tropeçasse uma vez ficava vermelha pra sempre,
+      // porque publicar com sucesso não limpava e o Reconectar da tela chama o
+      // login da Meta, que não toca nessas linhas.
+      await sb
+        .from("social_accounts")
+        .update({ needs_reconnect: false, token_error: null })
+        .eq("id", acc.id);
       published++;
       details.push({ accountId: t.account_id, ok: true, externalId });
     } catch (e) {

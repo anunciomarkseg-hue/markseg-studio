@@ -42,6 +42,9 @@ export interface ScheduledPost {
   createdBy?: string | null;
   /** quando foi criado no sistema (ISO). */
   createdAt?: string | null;
+  /** motivo REAL da falha, por conta de destino. Sem isto a tela mostrava só o
+   *  selo "Falhou" e o motivo só existia no banco. */
+  targetErrors?: { accountId: string; error: string }[];
 }
 
 export const STATUS_LABEL: Record<PostStatus, string> = {

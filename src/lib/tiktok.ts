@@ -219,3 +219,32 @@ export async function publishToTikTokVideo(
   // ainda processando — o vídeo deve sair em instantes
   return publishId;
 }
+
+/**
+ * Confere se a conta do TikTok ainda publica.
+ *
+ * O token do TikTok expira em ~24h, então "vencido" é o estado NORMAL dele. Por
+ * isso o teste primeiro tenta renovar pelo refresh_token (e persiste o novo);
+ * só declara morto se a renovação falhar ou a API recusar.
+ */
+export async function checkTikTokToken(acc: {
+  id: string;
+  access_token: string;
+  refresh_token?: string | null;
+  token_expires_at?: string | null;
+}): Promise<{ ok: boolean; error?: string }> {
+  try {
+    const token = await ensureTikTokToken(acc);
+    const res = await fetchT(`${API}/user/info/?fields=open_id`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const json = (await res.json()) as { error?: { code?: string; message?: string } };
+    const code = json.error?.code;
+    if (!res.ok || (code && code !== "ok")) {
+      return { ok: false, error: json.error?.message || `TikTok recusou (HTTP ${res.status})` };
+    }
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: (e as Error).message };
+  }
+}
