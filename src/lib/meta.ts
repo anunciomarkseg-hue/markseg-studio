@@ -181,8 +181,9 @@ export async function getPages(userToken: string): Promise<PagesResult> {
   //  2) Páginas do Business Manager (owned_pages)  ← agências caem aqui
   //  3) Páginas de clientes no Business (client_pages)
   // Tudo com um ORÇAMENTO DE TEMPO pra não estourar o limite da função (504).
-  // A rota do callback tem maxDuration=60. Deixamos folga pros upserts no banco.
-  const deadline = Date.now() + 42_000;
+  // A rota do callback tem maxDuration=60. Os upserts que vêm depois rodam todos
+  // em paralelo, então cabem na folga que sobra.
+  const deadline = Date.now() + 46_000;
   const enc = encodeURIComponent(PAGE_FIELDS);
   let truncado = false;
 
@@ -214,17 +215,26 @@ export async function getPages(userToken: string): Promise<PagesResult> {
         deadline,
       );
       if (biz.truncado) truncado = true;
-      for (const b of biz.items) {
+      // Businesses em PARALELO, em lotes. Antes era um Business de cada vez
+      // (`for` com await dentro): numa agência com vários Businesses o prazo
+      // estourava antes de visitar todos, e as Páginas dos últimos nunca eram
+      // enumeradas — some do reconectar sem ninguém saber. O lote limita a
+      // concorrência pra não tomar rate limit da Meta.
+      const LOTE_BIZ = 5;
+      for (let i = 0; i < biz.items.length; i += LOTE_BIZ) {
         if (Date.now() > deadline) {
           truncado = true; // sobraram Businesses sem visitar
           break;
         }
+        const lote = biz.items.slice(i, i + LOTE_BIZ);
         const results = await Promise.all(
-          ["owned_pages", "client_pages"].map((edge) =>
-            pagedEdge<RawPage>(
-              `${GRAPH}/${b.id}/${edge}?fields=${enc}&limit=100&access_token=${userToken}`,
-              deadline,
-            ).catch(() => ({ items: [] as RawPage[], truncado: true })),
+          lote.flatMap((b) =>
+            ["owned_pages", "client_pages"].map((edge) =>
+              pagedEdge<RawPage>(
+                `${GRAPH}/${b.id}/${edge}?fields=${enc}&limit=100&access_token=${userToken}`,
+                deadline,
+              ).catch(() => ({ items: [] as RawPage[], truncado: true })),
+            ),
           ),
         );
         for (const r of results) {
