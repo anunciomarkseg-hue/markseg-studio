@@ -164,3 +164,20 @@ export async function deleteLinkedInPost(postUrn: string, token: string): Promis
     throw new Error(err.message || `LinkedIn recusou apagar (HTTP ${res.status})`);
   }
 }
+
+/** Confere se o token do LinkedIn ainda vale, perguntando à API. Devolve o
+ *  motivo literal quando não vale, em vez de a gente supor. */
+export async function checkLinkedInToken(token: string): Promise<{ ok: boolean; error?: string }> {
+  if (!token) return { ok: false, error: "Conta sem token guardado — reconecte." };
+  try {
+    const res = await fetchT(
+      "https://api.linkedin.com/v2/organizationAcls?q=roleAssignee&role=ADMINISTRATOR&state=APPROVED&count=1",
+      { headers: liHeaders(token) },
+    );
+    const json = (await res.json()) as { message?: string };
+    if (!res.ok) return { ok: false, error: json.message || `LinkedIn recusou (HTTP ${res.status})` };
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: (e as Error).message };
+  }
+}

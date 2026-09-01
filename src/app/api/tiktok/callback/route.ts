@@ -21,7 +21,14 @@ export async function GET(req: Request) {
   const oauthError = url.searchParams.get("error_description") ?? url.searchParams.get("error");
 
   if (oauthError) return back(`?erro=${encodeURIComponent(oauthError)}`);
-  if (!code) return back("?erro=sem_codigo");
+  if (!code) {
+    // Só as CHAVES recebidas (code e state são credenciais, não vão pra URL).
+    const chaves = [...url.searchParams.keys()];
+    const detalhe = chaves.length
+      ? `o TikTok respondeu sem "code" (veio: ${chaves.join(", ")})`
+      : "o TikTok devolveu a página sem nenhum parâmetro — confira a Redirect URI autorizada no app";
+    return back(`?erro=${encodeURIComponent(detalhe)}`);
+  }
 
   const cookieState = req.headers.get("cookie")?.match(/tiktok_oauth_state=([^;]+)/)?.[1];
   if (!state || !cookieState || state !== cookieState) {

@@ -21,7 +21,15 @@ export async function GET(req: Request) {
   const oauthError = url.searchParams.get("error_description") ?? url.searchParams.get("error");
 
   if (oauthError) return back(`?erro=${encodeURIComponent(oauthError)}`);
-  if (!code) return back("?erro=sem_codigo");
+  if (!code) {
+    // "sem_codigo" sozinho não diz nada. Lista as CHAVES que chegaram (nunca os
+    // valores: code e state são credenciais) pra dar por onde começar.
+    const chaves = [...url.searchParams.keys()];
+    const detalhe = chaves.length
+      ? `o LinkedIn respondeu sem "code" (veio: ${chaves.join(", ")})`
+      : "o LinkedIn devolveu a página sem nenhum parâmetro — confira a Redirect URL autorizada no app e se o produto Community Management API está aprovado";
+    return back(`?erro=${encodeURIComponent(detalhe)}`);
+  }
 
   const cookieState = req.headers.get("cookie")?.match(/linkedin_oauth_state=([^;]+)/)?.[1];
   if (!state || !cookieState || state !== cookieState) {

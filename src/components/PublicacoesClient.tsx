@@ -320,6 +320,35 @@ export function PublicacoesClient({
                   </button>
                 </div>
 
+                {/* Motivo REAL da falha, direto do post_targets.error_message.
+                    Antes o post ficava com o selo "Falhou" e nenhuma explicação:
+                    o motivo só era visível consultando o banco na mão. */}
+                {p.targetErrors && p.targetErrors.length > 0 && (
+                  <div className="rounded-2xl border border-rose-200 bg-rose-50 p-3">
+                    <p className="text-xs font-semibold text-rose-700">
+                      Por que não saiu (resposta da rede):
+                    </p>
+                    <ul className="mt-1.5 space-y-1">
+                      {p.targetErrors.map((e) => (
+                        <li key={e.accountId} className="break-words text-[11px] leading-relaxed text-rose-600">
+                          <b className="font-semibold">
+                            {accounts.find((a) => a.id === e.accountId)?.handle ?? "conta"}:
+                          </b>{" "}
+                          <span className="font-mono">{e.error}</span>
+                        </li>
+                      ))}
+                    </ul>
+                    {p.targetErrors.some((e) => /access token/i.test(e.error)) && (
+                      <p className="mt-2 text-[11px] text-rose-700">
+                        Isso é acesso vencido, não problema do post.{" "}
+                        <Link href="/contas" className="font-bold underline">
+                          Vá em Contas e use Testar conexão →
+                        </Link>
+                      </p>
+                    )}
+                  </div>
+                )}
+
                 {aberto && reagendando && (
                   <div className="rounded-2xl border border-brand-blue/30 bg-brand-blue-50/40 p-4 animate-rise">
                     <p className="mb-3 flex items-center gap-2 text-sm font-semibold text-ink">

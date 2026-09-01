@@ -1,8 +1,7 @@
-import { Plus, RefreshCw, CheckCircle2, ShieldCheck, AlertCircle } from "lucide-react";
+import { Plus, CheckCircle2, ShieldCheck, AlertCircle, AlertTriangle } from "lucide-react";
 import { listAccounts } from "@/lib/db";
-import { fmtFollowers } from "@/lib/format";
 import type { SocialAccount } from "@/lib/types";
-import { Avatar } from "@/components/Avatar";
+import { AccountCard } from "@/components/AccountCard";
 import { PlatformIcon } from "@/components/PlatformIcon";
 
 export const dynamic = "force-dynamic";
@@ -10,7 +9,14 @@ export const dynamic = "force-dynamic";
 export default async function ContasPage({
   searchParams,
 }: {
-  searchParams: Promise<{ conectado?: string; erro?: string }>;
+  searchParams: Promise<{
+    conectado?: string;
+    erro?: string;
+    faltaram?: string;
+    maisfaltaram?: string;
+    semtoken?: string;
+    truncado?: string;
+  }>;
 }) {
   const sp = await searchParams;
   let accounts: SocialAccount[] = [];
@@ -44,44 +50,43 @@ export default async function ContasPage({
         </div>
       )}
 
+      {/* Diagnóstico da última reconexão. Sem isto a tela dizia só "N conta(s)
+          conectada(s)" e as Páginas que ficaram de fora sumiam sem aviso. */}
+      {(sp.faltaram || sp.semtoken || sp.truncado) && (
+        <div className="mb-5 rounded-2xl border border-amber-300 bg-amber-50 p-4 text-amber-900 animate-rise">
+          <p className="flex items-center gap-2 text-sm font-semibold">
+            <AlertTriangle className="h-5 w-5 shrink-0" /> A reconexão não cobriu tudo
+          </p>
+          {sp.faltaram && (
+            <p className="mt-2 text-sm">
+              Estas contas já cadastradas <b>não vieram</b> nesta reconexão e continuam com o acesso
+              antigo: <b>{sp.faltaram}</b>
+              {sp.maisfaltaram ? ` e mais ${sp.maisfaltaram}` : ""}.
+            </p>
+          )}
+          {sp.semtoken && (
+            <p className="mt-2 text-sm">
+              {sp.semtoken} Página(s) apareceram na sua lista mas <b>sem permissão de publicar</b>.
+              No Facebook, confira se você é administrador delas e se marcou todas na janela de
+              permissões.
+            </p>
+          )}
+          {sp.truncado && (
+            <p className="mt-2 text-sm">
+              A lista de Páginas veio <b>incompleta</b> (a Meta demorou demais pra responder). Tente
+              reconectar de novo.
+            </p>
+          )}
+          <p className="mt-2 text-xs">
+            Dica: use <b>Testar conexão</b> na conta que ficou de fora pra ver o motivo exato que a
+            rede dá.
+          </p>
+        </div>
+      )}
+
       <div className="space-y-3">
         {accounts.map((a) => (
-          <div key={a.id} className="card flex items-center gap-4 p-4">
-            <Avatar account={a} size={48} />
-            <div className="min-w-0 flex-1">
-              <div className="flex min-w-0 items-center gap-2">
-                <span className="min-w-0 truncate font-semibold text-ink">{a.handle}</span>
-                {a.needs_reconnect ? (
-                  <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-rose-50 px-2 py-0.5 text-xs font-semibold text-rose-700">
-                    <AlertCircle className="h-3 w-3" /> <span className="hidden sm:inline">Reconecte</span>
-                  </span>
-                ) : (
-                  <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-semibold text-emerald-700">
-                    <CheckCircle2 className="h-3 w-3" /> <span className="hidden sm:inline">Conectada</span>
-                  </span>
-                )}
-              </div>
-              <div className="truncate text-xs text-muted">
-                {{ instagram: "Instagram", facebook: "Facebook", linkedin: "LinkedIn", tiktok: "TikTok" }[a.platform] ?? a.platform}
-                {a.platform === "tiktok" ? "" : ` · ${fmtFollowers(a.followers)} seguidores`}
-              </div>
-              {a.needs_reconnect && (
-                <p className="mt-1 text-xs font-medium text-rose-600">
-                  O acesso caducou — clique em Reconectar pra voltar a publicar.
-                </p>
-              )}
-            </div>
-            <a
-              href="/api/meta/oauth"
-              className={`flex shrink-0 items-center gap-1.5 rounded-lg border px-3 py-2 text-sm font-semibold transition-fluid ${
-                a.needs_reconnect
-                  ? "border-rose-300 bg-rose-50 text-rose-700 hover:brightness-95"
-                  : "border-line text-muted hover:text-ink"
-              }`}
-            >
-              <RefreshCw className="h-3.5 w-3.5" /> <span className="hidden sm:inline">Reconectar</span>
-            </a>
-          </div>
+          <AccountCard key={a.id} account={a} />
         ))}
 
         {/* Conectar nova → login real da Meta */}

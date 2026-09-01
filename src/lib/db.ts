@@ -31,14 +31,21 @@ export async function listPosts(): Promise<ScheduledPost[]> {
 
   const ids = (posts ?? []).map((p) => p.id);
   const targetsByPost: Record<string, string[]> = {};
+  const errorsByPost: Record<string, { accountId: string; error: string }[]> = {};
   if (ids.length) {
     const { data: targets, error: tErr } = await sb
       .from("post_targets")
-      .select("post_id, account_id")
+      .select("post_id, account_id, error_message")
       .in("post_id", ids);
     if (tErr) throw new Error(tErr.message);
     for (const t of targets ?? []) {
       (targetsByPost[t.post_id] ??= []).push(t.account_id);
+      if (t.error_message) {
+        (errorsByPost[t.post_id] ??= []).push({
+          accountId: t.account_id,
+          error: t.error_message,
+        });
+      }
     }
   }
 
@@ -54,6 +61,7 @@ export async function listPosts(): Promise<ScheduledPost[]> {
     shareToFeed: p.share_to_feed ?? false,
     createdBy: p.created_by ?? null,
     createdAt: p.created_at ?? null,
+    targetErrors: errorsByPost[p.id] ?? [],
   }));
 }
 
